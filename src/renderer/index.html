@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- img-src/media-src incluyen el server local de GymVision (127.0.0.1:8000)
+         para previsualizar video anotado y el primer frame en la sección VBT Lab.
+         Es infra benigna: nada lo carga si la feature gymvision no está. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:8000; img-src 'self' data: blob: http://127.0.0.1:8000 file:; media-src 'self' blob: http://127.0.0.1:8000 file:"
+    />
+    <title>GymBar</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

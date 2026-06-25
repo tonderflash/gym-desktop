@@ -1,0 +1,79 @@
+@import 'tailwindcss';
+
+/* ── Tipografía de marca (empaquetada local — sin requests externos) ────────
+   Nunito  → display & títulos (manual: Bold/ExtraBold/Black)
+   Inter   → cuerpo & UI       (manual: Regular/Medium/SemiBold)              */
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+  src: url('./assets/fonts/nunito-var.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/inter-var.woff2') format('woff2');
+}
+
+@theme {
+  --font-display: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* ── Paleta del manual ──────────────────────────────────────────────────
+     CYAN #07BCC8 identidad·CTAs·links | LIMA #D1FF03 energía·highlights
+     VERDE OSCURO #15454B base | MENTA #B8F2D6 soporte | NIEBLA #EEF4F6     */
+  --color-accent: #07bcc8;
+  --color-energy: #d1ff03;
+  --color-mint: #b8f2d6;
+
+  /* Escala de superficie derivada del verde oscuro (el manual no define
+     elevaciones — decisión propia: base ligeramente más profunda y panel
+     en el verde oscuro oficial para que las cards "floten")               */
+  --color-surface: #0d3238;
+  --color-panel: #15454b;
+  --color-panel-2: #1c545c;
+  --color-line: #266068;
+
+  /* Tinta sobre oscuro: niebla → menta → teal apagado */
+  --color-ink: #eef4f6;
+  --color-ink-dim: #b8f2d6;
+  --color-ink-faint: #76a8ac;
+
+  /* Semánticos (no especificados en el manual — armonizados con la paleta) */
+  --color-ok: #2be08a;
+  --color-warn: #ffc53d;
+  --color-danger: #ff6b5e;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Slider en LIMA — el manual la asigna a energía/highlights */
+input[type='range'] {
+  accent-color: var(--color-energy);
+}
+
+/* Foco visible consistente (cyan = identidad) */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #2a6a73; border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.drag-region { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
