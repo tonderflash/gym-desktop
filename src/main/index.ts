@@ -6,7 +6,7 @@ import { loadSettings } from './settings'
 import { autoMigrateOnFirstRun } from './migrate'
 import { registerIpc, broadcastState, onBroadcast, setIpcWindow } from './ipc'
 import { startScheduler } from './scheduler'
-import { initUpdater } from './updater'
+import { initUpdater, setUpdaterWindow } from './updater'
 import { refreshAll, buildState, markWentManual } from './pipeline'
 import { logicalToday } from './logic'
 import { createTray, refreshTray, type TrayActions } from './tray'
@@ -68,6 +68,7 @@ function ensureWindow(): BrowserWindow {
   if (!win || win.isDestroyed()) {
     win = createWindow()
     setIpcWindow(win)
+    setUpdaterWindow(win) // el updater también envía eventos a la ventana
   }
   return win
 }

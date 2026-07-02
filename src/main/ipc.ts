@@ -244,9 +244,11 @@ export function registerIpc(window: BrowserWindow): void {
     return r
   })
 
-  ipcMain.handle('app:updater', (_e, action: 'check' | 'install' | 'openLatest') => {
+  // validación estricta: un valor desconocido NO cae en ninguna acción
+  // (antes el else final abría el navegador con cualquier input)
+  ipcMain.handle('app:updater', (_e, action: unknown) => {
     if (action === 'check') void checkForUpdates()
     else if (action === 'install') installUpdate()
-    else openLatestRelease()
+    else if (action === 'openLatest') openLatestRelease()
   })
 }

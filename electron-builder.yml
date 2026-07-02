@@ -32,3 +32,4 @@ publish:
   provider: github
   owner: tonderflash
   repo: gym-desktop
+  releaseType: release # publica directo (sin quedar en draft) para que electron-updater lo vea
