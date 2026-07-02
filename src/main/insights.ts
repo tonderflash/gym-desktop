@@ -88,7 +88,12 @@ function paceStatus(diff: number | null, tolerance: number): PaceStatus {
   return 'ontrack'
 }
 
-/** Mejor e1RM por sesión (fecha lógica), ASC — la línea real del lift. */
+/**
+ * Serie de FUERZA PICO del lift: en cada sesión, el mejor e1RM de la ventana
+ * móvil de 21 días. El best por sesión crudo mete ruido falso — los días de
+ * velocidad/volumen del programa (squat 3×8 @105, bench 3×5 @95) hunden la
+ * línea aunque la fuerza no bajó. La ventana los absorbe.
+ */
 function liftHistory(sets: DatedSet[], titles: Set<string>): { date: string; e1rmLbs: number }[] {
   const byDate = new Map<string, number>()
   for (const s of sets) {
@@ -98,20 +103,34 @@ function liftHistory(sets: DatedSet[], titles: Set<string>): { date: string; e1r
     const prev = byDate.get(s.date)
     if (prev === undefined || v > prev) byDate.set(s.date, v)
   }
-  return [...byDate.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([date, v]) => ({ date, e1rmLbs: Math.round(v) }))
+  const sessions = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  return sessions
+    .map(([date]) => {
+      let best = 0
+      for (const [d2, v2] of sessions) {
+        if (d2 > date) break
+        if (daysBetween(date, d2) <= 21) best = Math.max(best, v2)
+      }
+      return { date, e1rmLbs: Math.round(best) }
+    })
     .slice(-30)
 }
 
+// Ganancia plausible acotada: ±0.75 lb/día (~5 lb/semana, rápido pero posible
+// en un regreso). Sin el cap, un single suelto proyecta números de fantasía.
+const MAX_SLOPE_LBS_PER_DAY = 0.75
+
 /**
- * Extrapola la tendencia (regresión lineal sobre las últimas ≤6 sesiones) al
- * día del meet. Señal direccional, no promesa — se acota a un rango sano para
- * que un single suelto no dispare la línea al infinito.
+ * Extrapola la tendencia (regresión sobre las últimas ≤6 sesiones, ancladas al
+ * último dato) al día del meet. Señal direccional, no promesa: exige ≥3
+ * sesiones repartidas en ≥21 días y acota pendiente y resultado.
  */
 function projectTo(history: { date: string; e1rmLbs: number }[], targetDate: string, targetLbs: number): number | null {
   const pts = history.slice(-6)
-  if (pts.length < 2) return null
+  if (pts.length < 3) return null
+  const lastPt = pts[pts.length - 1]
+  if (daysBetween(lastPt.date, pts[0].date) < 21) return null
+
   const x0 = pts[0].date
   const xs = pts.map((p) => daysBetween(p.date, x0))
   const ys = pts.map((p) => p.e1rmLbs)
@@ -125,10 +144,9 @@ function projectTo(history: { date: string; e1rmLbs: number }[], targetDate: str
     den += (xs[i] - mx) ** 2
   }
   if (den === 0) return null
-  const slope = num / den
-  const raw = my + slope * (daysBetween(targetDate, x0) - mx)
-  const last = ys[ys.length - 1]
-  return Math.round(Math.max(last * 0.6, Math.min(raw, Math.max(targetLbs, last) * 1.3)))
+  const slope = Math.max(-MAX_SLOPE_LBS_PER_DAY, Math.min(num / den, MAX_SLOPE_LBS_PER_DAY))
+  const raw = lastPt.e1rmLbs + slope * daysBetween(targetDate, lastPt.date)
+  return Math.round(Math.max(lastPt.e1rmLbs * 0.7, Math.min(raw, Math.max(targetLbs, lastPt.e1rmLbs) * 1.25)))
 }
 
 function buildMeet(sets: DatedSet[]): MeetInsight {

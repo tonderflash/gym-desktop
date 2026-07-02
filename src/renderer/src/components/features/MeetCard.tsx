@@ -193,7 +193,7 @@ export function MeetCard({ meet }: { meet: MeetInsight }) {
         {/* leyenda de lectura — una sola vez para las tres gráficas */}
         <span className="ml-auto flex items-center gap-3 text-[10px] text-ink-faint">
           <span className="flex items-center gap-1">
-            <span className="inline-block h-0.5 w-4 rounded bg-accent" /> tu e1RM
+            <span className="inline-block h-0.5 w-4 rounded bg-accent" /> tu fuerza (mejor 21d)
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block h-0 w-4 border-t border-dashed border-ink-faint" /> ritmo a meta
@@ -211,8 +211,9 @@ export function MeetCard({ meet }: { meet: MeetInsight }) {
       </div>
 
       <p className="text-[10px] text-ink-faint">
-        Si tu línea cyan va por ENCIMA de la punteada gris, vas adelantado. La punteada corta extrapola
-        tus últimas ~6 sesiones al día del meet. e1RM = sets de Hevy (reps + RIR del RPE) · metas en settings.json.
+        Si tu línea cyan va por ENCIMA de la punteada gris, vas adelantado. La punteada corta extrapola tu
+        tendencia reciente al día del meet (acotada a ±5 lb/sem). Fuerza = mejor e1RM en ventana de 21 días,
+        de tus sets en Hevy (reps + RIR del RPE) · metas en settings.json.
       </p>
     </div>
   )
