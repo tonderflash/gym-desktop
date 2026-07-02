@@ -43,16 +43,8 @@ export default function App() {
           sticky: true,
           action: { label: 'Reiniciar y actualizar', onClick: () => void window.api.updaterAction('install') },
         })
-      } else if (e.type === 'manual') {
-        push({
-          title: `v${e.version} disponible`,
-          body: 'Descárgala desde GitHub Releases.',
-          tone: 'info',
-          sticky: true,
-          action: { label: 'Abrir descarga', onClick: () => void window.api.updaterAction('openLatest') },
-        })
       } else if (e.type === 'error') {
-        push({ title: 'Error buscando updates', body: e.message, tone: 'warn' })
+        push({ title: 'Error de actualización', body: e.message, tone: 'warn' })
       }
     })
   }, [push])

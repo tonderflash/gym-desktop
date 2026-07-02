@@ -9,7 +9,7 @@ import {
 import { calculateRisk, checkinFeaturesFromRow, logicalToday, localIso } from './logic'
 import { exportSkill } from './skill-export'
 import { importLegacy, legacyAvailable } from './migrate'
-import { checkForUpdates, installUpdate, openLatestRelease } from './updater'
+import { checkForUpdates, installUpdate } from './updater'
 import { RISK_MODEL_NAME } from '@shared/schema'
 import { SKIP_REASON_OPTS } from '@shared/labels'
 import { sanitizeCsvText } from './csv'
@@ -277,10 +277,8 @@ export function registerIpc(window: BrowserWindow): void {
   })
 
   // validación estricta: un valor desconocido NO cae en ninguna acción
-  // (antes el else final abría el navegador con cualquier input)
   ipcMain.handle('app:updater', (_e, action: unknown) => {
     if (action === 'check') void checkForUpdates()
     else if (action === 'install') installUpdate()
-    else if (action === 'openLatest') openLatestRelease()
   })
 }

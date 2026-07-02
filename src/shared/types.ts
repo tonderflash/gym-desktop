@@ -180,7 +180,6 @@ export type UpdaterEvent =
   | { type: 'available'; version: string }
   | { type: 'progress'; percent: number }
   | { type: 'downloaded'; version: string }
-  | { type: 'manual'; version: string; url: string }
   | { type: 'error'; message: string }
 
 export interface ApiSurface {
@@ -197,7 +196,7 @@ export interface ApiSurface {
   exportSkill(): Promise<{ ok: boolean; path?: string; error?: string }>
   openDataFolder(): Promise<void>
   importLegacy(): Promise<{ ok: boolean; imported?: number; error?: string }>
-  updaterAction(action: 'check' | 'install' | 'openLatest'): Promise<void>
+  updaterAction(action: 'check' | 'install'): Promise<void>
   onStateUpdate(cb: (s: AppState) => void): () => void
   onUpdaterEvent(cb: (e: UpdaterEvent) => void): () => void
   onNavigate(cb: (page: string) => void): () => void

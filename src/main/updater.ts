@@ -1,14 +1,23 @@
-// Auto-update tipo Claude Desktop: electron-updater + GitHub Releases.
+// Auto-update tipo Claude Desktop, con DOS motores según la plataforma:
 //
-// Máquina de estados honesta: en macOS Squirrel exige firma válida para
-// instalar — sin ella electron-updater DESCARGA el update pero quitAndInstall()
-// falla en silencio (síntoma real: toast "lista para instalar" + botón muerto).
-// Por eso detectamos la firma al arrancar y elegimos UN modo:
-//   auto   → flujo completo electron-updater (Windows, o mac firmado)
-//   manual → solo avisar vía GitHub API y abrir la página del release
-// Nunca se mezclan: en manual jamás se ofrece "Reiniciar y actualizar".
-import { app, shell, BrowserWindow } from 'electron'
+//   electron  → electron-updater completo (Windows, o mac CON firma válida).
+//   selfpatch → instalador propio para mac SIN firma: Squirrel rechaza apps
+//               adhoc, así que replicamos su trabajo — bajar el zip del
+//               release, verificar SHA-512 contra latest-mac.yml, swapear el
+//               .app y relanzar. Mismo botón "Reiniciar y actualizar", sin
+//               mandar a nadie a GitHub.
+//
+// Seguridad del selfpatch: solo URLs fijas https://github.com/<REPO>/…,
+// versión validada por semver + solo upgrade, hash SHA-512 del manifiesto
+// verificado antes de extraer, tamaño acotado, extracción con /usr/bin/ditto
+// (execFile, sin shell) y swap por rename dentro del mismo volumen.
+import { app, BrowserWindow } from 'electron'
 import { execFile } from 'child_process'
+import { createHash } from 'crypto'
+import { createWriteStream, existsSync, mkdirSync, readdirSync, rmSync, renameSync } from 'fs'
+import { join, dirname } from 'path'
+import { Readable } from 'stream'
+import { pipeline } from 'stream/promises'
 import electronUpdater from 'electron-updater'
 import { isDev } from './env'
 import type { UpdaterEvent } from '@shared/types'
@@ -17,39 +26,59 @@ const { autoUpdater } = electronUpdater
 
 // Cambiar junto con electron-builder.yml → publish
 export const GITHUB_REPO = 'tonderflash/gym-desktop'
-const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
-const FETCH_TIMEOUT_MS = 10_000
-// Releases usan semver estricto; cualquier otra cosa del API se descarta.
+const CHECK_INTERVAL_MS = 60 * 60 * 1000
+const FOCUS_CHECK_MIN_GAP_MS = 15 * 60 * 1000
+const FETCH_TIMEOUT_MS = 15_000
+const MAX_ZIP_BYTES = 500 * 1024 * 1024
 const SEMVER_RE = /^v?\d{1,4}\.\d{1,4}\.\d{1,4}$/
 
-type Mode = 'auto' | 'manual'
+type Mode = 'electron' | 'selfpatch'
 
 let win: BrowserWindow | null = null
-let mode: Mode = 'manual' // seguro por defecto hasta verificar la firma
+let mode: Mode = 'selfpatch' // seguro por defecto hasta verificar la firma
 let checking = false
-let downloadedVersion: string | null = null
-let lastNotifiedVersion: string | null = null
-let manualUrl: string | null = null
+let installing = false
+let lastCheckAt = 0
+// selfpatch: staging listo para instalar
+let stagedVersion: string | null = null
+let stagedAppPath: string | null = null
+// electron mode
+let electronDownloaded = false
+
+function updatesDir(): string {
+  const d = join(app.getPath('userData'), 'updates')
+  mkdirSync(d, { recursive: true })
+  return d
+}
 
 /** Re-apunta los eventos cuando la ventana se recrea (la app vive en el tray). */
 export function setUpdaterWindow(window: BrowserWindow): void {
   win = window
+  hookFocusCheck(window)
 }
 
 function send(e: UpdaterEvent): void {
   if (win && !win.isDestroyed()) win.webContents.send('updater:event', e)
 }
 
+/** Chequeo oportunista al enfocar la ventana (throttled) — así un release
+ *  nuevo aparece en minutos, no “cuando toque el timer de la hora”. */
+function hookFocusCheck(w: BrowserWindow): void {
+  w.on('focus', () => {
+    if (Date.now() - lastCheckAt < FOCUS_CHECK_MIN_GAP_MS) return
+    void checkForUpdates()
+  })
+}
+
 /**
- * macOS solo puede auto-instalar con firma de identidad real. `codesign -dv`
- * reporta "adhoc" para builds sin certificado (lo que produce electron-builder
- * sin CSC_LINK). Ante cualquier duda devolvemos false → modo manual (el modo
- * seguro: avisa pero no promete instalar).
+ * macOS solo puede usar electron-updater con firma de identidad real.
+ * `codesign -dv` reporta "adhoc" para builds sin certificado. Ante cualquier
+ * duda → selfpatch (funciona igual; solo es nuestro instalador).
  */
 function macSignatureOk(): Promise<boolean> {
   if (process.platform !== 'darwin') return Promise.resolve(true)
   return new Promise((resolve) => {
-    execFile('codesign', ['-dv', app.getPath('exe')], { timeout: 5000 }, (err, _out, stderr) => {
+    execFile('codesign', ['-dv', app.getPath('exe')], { timeout: 5000 }, (err, _o, stderr) => {
       if (err) return resolve(false)
       resolve(!/flags=.*adhoc/i.test(String(stderr)))
     })
@@ -69,50 +98,155 @@ function isNewer(a: string, b: string): boolean {
   return false
 }
 
-/** Chequeo vía GitHub API. `force` re-notifica aunque la versión ya se avisó. */
-async function manualCheck(force = false): Promise<void> {
+async function fetchWithTimeout(url: string): Promise<Response> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS)
   try {
-    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
-      headers: { accept: 'application/vnd.github+json' },
-      signal: ctrl.signal,
-    })
-    if (!res.ok) { send({ type: 'none' }); return }
-    const rel = (await res.json()) as { tag_name?: string; html_url?: string }
-
-    const tag = String(rel.tag_name ?? '').trim()
-    if (!SEMVER_RE.test(tag)) { send({ type: 'none' }); return }
-    const latest = tag.replace(/^v/, '')
-    if (!isNewer(latest, app.getVersion())) { send({ type: 'none' }); return }
-
-    // validar la URL al recibirla, no solo al abrirla
-    const fallback = `https://github.com/${GITHUB_REPO}/releases/latest`
-    manualUrl = fallback
-    try {
-      const u = new URL(String(rel.html_url ?? ''))
-      if (u.protocol === 'https:' && u.hostname === 'github.com') manualUrl = u.toString()
-    } catch { /* malformada → fallback */ }
-
-    // los toasts manual son sticky: no re-avisar la misma versión cada 4h
-    if (!force && lastNotifiedVersion === latest) return
-    lastNotifiedVersion = latest
-    send({ type: 'manual', version: latest, url: manualUrl })
-  } catch {
-    send({ type: 'none' })
+    return await fetch(url, { signal: ctrl.signal, redirect: 'follow' })
   } finally {
     clearTimeout(timer)
   }
 }
 
-/** Cae a modo manual definitivo (para esta sesión) y avisa si hay update. */
-function degradeToManual(force = false): void {
-  mode = 'manual'
-  downloadedVersion = null
-  void manualCheck(force)
+// ── selfpatch: manifiesto ────────────────────────────────────────────────
+interface Manifest {
+  version: string
+  zipName: string
+  sha512: string // base64, como lo publica electron-builder
 }
 
-function wireAutoUpdater(): void {
+/** Parser mínimo del latest-mac.yml de electron-builder (sin deps YAML). */
+function parseManifest(text: string): Manifest | null {
+  const version = /^version:\s*(\S+)\s*$/m.exec(text)?.[1]
+  if (!version || !SEMVER_RE.test(version)) return null
+
+  const files: { url: string; sha512: string }[] = []
+  const re = /-\s*url:\s*(\S+)[\r\n]+\s*sha512:\s*(\S+)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) files.push({ url: m[1], sha512: m[2] })
+
+  // arm64 usa el zip "-arm64-mac.zip"; intel el "-mac.zip" plano
+  const want = process.arch === 'arm64'
+    ? files.find((f) => f.url.endsWith('-arm64-mac.zip'))
+    : files.find((f) => f.url.endsWith('-mac.zip') && !f.url.includes('arm64'))
+  if (!want) return null
+  // nombre de asset plano, sin rutas ni rarezas
+  if (!/^[\w.-]+\.zip$/.test(want.url) || !/^[A-Za-z0-9+/=]{20,}$/.test(want.sha512)) return null
+  return { version: version.replace(/^v/, ''), zipName: want.url, sha512: want.sha512 }
+}
+
+async function fetchManifest(): Promise<Manifest | null> {
+  const res = await fetchWithTimeout(`https://github.com/${GITHUB_REPO}/releases/latest/download/latest-mac.yml`)
+  if (!res.ok) return null
+  return parseManifest(await res.text())
+}
+
+// ── selfpatch: descarga + verificación + staging ─────────────────────────
+async function downloadAndStage(man: Manifest): Promise<void> {
+  const dir = updatesDir()
+  const zipPath = join(dir, man.zipName)
+  const stageDir = join(dir, `stage-${man.version}`)
+
+  // descarga en streaming con hash simultáneo y progreso
+  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${man.version}/${man.zipName}`
+  const res = await fetchWithTimeout(url)
+  if (!res.ok || !res.body) throw new Error(`descarga HTTP ${res.status}`)
+  const total = Number(res.headers.get('content-length') ?? 0)
+  if (total > MAX_ZIP_BYTES) throw new Error('asset demasiado grande')
+
+  const hash = createHash('sha512')
+  let received = 0
+  let lastPct = -1
+  const body = Readable.fromWeb(res.body as import('stream/web').ReadableStream)
+  body.on('data', (chunk: Buffer) => {
+    hash.update(chunk)
+    received += chunk.length
+    if (received > MAX_ZIP_BYTES) body.destroy(new Error('asset demasiado grande'))
+    if (total > 0) {
+      const pct = Math.round((received / total) * 100)
+      if (pct !== lastPct) { lastPct = pct; send({ type: 'progress', percent: pct }) }
+    }
+  })
+  await pipeline(body, createWriteStream(zipPath))
+
+  if (hash.digest('base64') !== man.sha512) {
+    rmSync(zipPath, { force: true })
+    throw new Error('checksum SHA-512 no coincide')
+  }
+
+  // extraer con ditto (preserva symlinks/permisos del bundle)
+  rmSync(stageDir, { recursive: true, force: true })
+  await new Promise<void>((resolve, reject) => {
+    execFile('/usr/bin/ditto', ['-x', '-k', zipPath, stageDir], { timeout: 120_000 }, (err) =>
+      err ? reject(err) : resolve())
+  })
+  rmSync(zipPath, { force: true })
+
+  const appPath = join(stageDir, 'GymBar.app')
+  if (!existsSync(join(appPath, 'Contents', 'Info.plist'))) throw new Error('zip sin GymBar.app válido')
+
+  stagedVersion = man.version
+  stagedAppPath = appPath
+  send({ type: 'downloaded', version: man.version })
+}
+
+async function selfpatchCheck(): Promise<void> {
+  send({ type: 'checking' })
+  const man = await fetchManifest()
+  if (!man || !isNewer(man.version, app.getVersion())) { send({ type: 'none' }); return }
+  if (stagedVersion === man.version && stagedAppPath && existsSync(stagedAppPath)) {
+    send({ type: 'downloaded', version: man.version }) // ya está listo
+    return
+  }
+  send({ type: 'available', version: man.version })
+  await downloadAndStage(man)
+}
+
+/** Swap del bundle + relaunch. El proceso viejo sigue vivo por inode aunque
+ *  su .app cambie de lugar; al relanzar, la ruta resuelve al binario nuevo. */
+function selfpatchInstall(): void {
+  if (!stagedVersion || !stagedAppPath || !existsSync(stagedAppPath)) {
+    send({ type: 'error', message: 'No hay update descargado todavía' })
+    return
+  }
+  // bundle actual: .../GymBar.app/Contents/MacOS/GymBar → subir 3 niveles
+  const bundle = dirname(dirname(dirname(app.getPath('exe'))))
+  if (!bundle.endsWith('.app')) {
+    send({ type: 'error', message: 'La app no corre desde un bundle .app' })
+    return
+  }
+  try {
+    const graveyard = join(updatesDir(), `old-${Date.now()}.app`)
+    renameSync(bundle, graveyard)      // mismo volumen → atómico
+    try {
+      renameSync(stagedAppPath, bundle)
+    } catch (e) {
+      renameSync(graveyard, bundle)    // rollback: dejar la app como estaba
+      throw e
+    }
+    stagedVersion = null
+    stagedAppPath = null
+    app.relaunch()
+    app.exit(0)
+  } catch (e) {
+    send({ type: 'error', message: `No se pudo instalar: ${e instanceof Error ? e.message : 'error'}` })
+  }
+}
+
+/** Limpia bundles viejos y stages huérfanos de instalaciones pasadas. */
+function cleanupUpdatesDir(): void {
+  try {
+    const dir = updatesDir()
+    for (const f of readdirSync(dir)) {
+      if (f.startsWith('old-') || f.startsWith('stage-') || f.endsWith('.zip')) {
+        rmSync(join(dir, f), { recursive: true, force: true })
+      }
+    }
+  } catch { /* limpieza nunca rompe el arranque */ }
+}
+
+// ── electron-updater (Windows / mac firmado) ─────────────────────────────
+function wireElectronUpdater(): void {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.allowPrerelease = false
@@ -126,18 +260,20 @@ function wireAutoUpdater(): void {
   autoUpdater.on('download-progress', (p) => send({ type: 'progress', percent: Math.round(p.percent) }))
   autoUpdater.on('update-downloaded', (info) => {
     if (!SEMVER_RE.test(info.version)) return
-    downloadedVersion = info.version
+    electronDownloaded = true
     send({ type: 'downloaded', version: info.version })
   })
-  // cualquier error del flujo auto (red, firma, yml roto) → modo manual
-  autoUpdater.on('error', () => degradeToManual())
+  autoUpdater.on('error', (e) => send({ type: 'error', message: e?.message ?? 'updater error' }))
 }
 
+// ── API ──────────────────────────────────────────────────────────────────
 export function initUpdater(window: BrowserWindow): void {
   win = window
+  hookFocusCheck(window)
+  cleanupUpdatesDir()
   void (async () => {
-    mode = (await macSignatureOk()) ? 'auto' : 'manual'
-    if (mode === 'auto') wireAutoUpdater()
+    mode = (await macSignatureOk()) ? 'electron' : 'selfpatch'
+    if (mode === 'electron') wireElectronUpdater()
     if (!isDev) {
       void checkForUpdates()
       setInterval(() => void checkForUpdates(), CHECK_INTERVAL_MS)
@@ -146,37 +282,31 @@ export function initUpdater(window: BrowserWindow): void {
 }
 
 export async function checkForUpdates(): Promise<void> {
-  if (checking) return
+  if (checking || installing || isDev) return
   checking = true
+  lastCheckAt = Date.now()
   try {
-    if (isDev || mode === 'manual') {
-      await manualCheck()
-    } else {
-      await autoUpdater.checkForUpdates()
-    }
-  } catch {
-    degradeToManual()
+    if (mode === 'selfpatch') await selfpatchCheck()
+    else await autoUpdater.checkForUpdates()
+  } catch (e) {
+    send({ type: 'error', message: e instanceof Error ? e.message : 'update check falló' })
   } finally {
     checking = false
   }
 }
 
 export function installUpdate(): void {
-  // poka-yoke: instalar solo si este build puede hacerlo Y ya descargó algo.
-  // Si no, degradar con force=true para que el usuario reciba el aviso manual
-  // en el acto (respuesta visible al click, nunca un botón muerto).
-  if (mode !== 'auto' || !downloadedVersion) {
-    degradeToManual(true)
-    return
-  }
+  if (installing) return
+  installing = true
   try {
-    autoUpdater.quitAndInstall()
-  } catch {
-    degradeToManual(true)
+    if (mode === 'selfpatch') {
+      selfpatchInstall()
+    } else if (electronDownloaded) {
+      autoUpdater.quitAndInstall()
+    } else {
+      send({ type: 'error', message: 'No hay update descargado todavía' })
+    }
+  } finally {
+    installing = false
   }
-}
-
-export function openLatestRelease(): void {
-  // manualUrl ya se validó (https + github.com) al parsear la respuesta del API
-  void shell.openExternal(manualUrl ?? `https://github.com/${GITHUB_REPO}/releases/latest`)
 }

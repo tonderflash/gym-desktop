@@ -7,9 +7,13 @@ on:
 permissions:
   contents: write
 
+# Los builders NO publican: dos jobs subiendo al mismo release en paralelo se
+# pisan (v0.1.6 quedó a medias: windows chocó y fail-fast canceló a mac con el
+# zip sin subir). Patrón robusto: build → artifacts → UN solo job publica todo.
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -25,14 +29,36 @@ jobs:
 
       - run: npm run build
 
-      # Publica los instaladores al Release del tag. electron-updater los
-      # detecta y notifica a todas las apps instaladas.
-      - run: npx electron-builder --publish always
+      # Sin firma en CI: CSC_IDENTITY_AUTO_DISCOVERY=false garantiza adhoc
+      # (el updater selfpatch de macOS cuenta con ello). Cuando haya firma de
+      # Apple, restaurar aquí CSC_LINK / APPLE_ID etc. y quitar esa variable.
+      - run: npx electron-builder --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Firma macOS (opcional pero necesaria para auto-update silencioso):
-          # CSC_LINK: ${{ secrets.CSC_LINK }}
-          # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: |
+            dist-release/*.dmg
+            dist-release/*.zip
+            dist-release/*.exe
+            dist-release/*.blockmap
+            dist-release/latest*.yml
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      # Un solo publish atómico con TODOS los assets (incluidos latest-mac.yml
+      # y latest.yml, que son los que el updater de la app consulta).
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          fail_on_unmatched_files: true
