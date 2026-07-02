@@ -11,15 +11,26 @@ export interface MeetLifts {
   deadlift: number
 }
 
-/** Objetivo de competencia. Cargas en LBS (e1RM); editable en settings.json. */
+/**
+ * Objetivo de competencia — dato PERSONAL, se edita desde el dashboard
+ * (widget). Los defaults van vacíos a propósito: cada usuario configura el
+ * suyo; nada del objetivo de un usuario viaja en el código.
+ */
 export interface MeetConfig {
   name: string
-  date: string // ISO yyyy-mm-dd
+  date: string // ISO yyyy-mm-dd; '' = sin configurar
   weightClass: string | null
-  baselineDate: string
-  baseline: MeetLifts
-  targets: MeetLifts
+  targets: MeetLifts // e1RM objetivo en LBS; 0 = sin meta para ese lift
 }
+
+/** Catálogo de widgets del dashboard (los cards core no se ocultan).
+ *  Para publicar un template nuevo en la galería: añadir la key aquí, su
+ *  default abajo, y la entrada + render en el renderer (WIDGET_CATALOG). */
+export const WIDGET_KEYS = [
+  'meet', 'muscles', 'volume', 'prs', 'findings', 'riskBreakdown',
+  'consistency', 'total',
+] as const
+export type WidgetKey = (typeof WIDGET_KEYS)[number]
 
 export interface Settings {
   userId: string
@@ -34,6 +45,7 @@ export interface Settings {
   lastReminderDate: string | null
   migratedFromGymBar: boolean
   meet: MeetConfig
+  dashboardWidgets: Record<WidgetKey, boolean>
 }
 
 let cached: Settings | null = null
@@ -51,15 +63,17 @@ function defaults(): Settings {
     hevyKeyPlain: null,
     lastReminderDate: null,
     migratedFromGymBar: false,
-    // Escenario "realista" del reporte de análisis (01 jun 2026) convertido a
-    // LBS; baseline = e1RMs del programa balanceado (29 jun 2026).
+    // vacío a propósito: el objetivo es personal y se configura en el widget
     meet: {
-      name: 'Copa Santo Domingo',
-      date: '2026-10-31',
-      weightClass: '66 kg',
-      baselineDate: '2026-06-29',
-      baseline: { squat: 181, bench: 160, deadlift: 245 },
-      targets: { squat: 303, bench: 165, deadlift: 347 },
+      name: '',
+      date: '',
+      weightClass: null,
+      targets: { squat: 0, bench: 0, deadlift: 0 },
+    },
+    // los 6 originales activos; los templates nuevos se "instalan" en la galería
+    dashboardWidgets: {
+      meet: true, muscles: true, volume: true, prs: true, findings: true, riskBreakdown: true,
+      consistency: false, total: false,
     },
   }
 }
@@ -70,17 +84,17 @@ export function loadSettings(): Settings {
     try {
       const raw = JSON.parse(readFileSync(paths.settings(), 'utf-8'))
       const d = defaults()
-      // merge profundo del meet: settings.json viejos no lo traen, y uno
-      // editado a mano puede traerlo incompleto
+      // merge profundo: settings.json viejos no traen estas claves, y uno
+      // editado a mano puede traerlas incompletas
       cached = {
         ...d,
         ...raw,
         meet: {
           ...d.meet,
           ...(raw.meet ?? {}),
-          baseline: { ...d.meet.baseline, ...(raw.meet?.baseline ?? {}) },
           targets: { ...d.meet.targets, ...(raw.meet?.targets ?? {}) },
         },
+        dashboardWidgets: { ...d.dashboardWidgets, ...(raw.dashboardWidgets ?? {}) },
       }
       return cached!
     } catch {

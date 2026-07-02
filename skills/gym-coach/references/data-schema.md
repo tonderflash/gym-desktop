@@ -52,6 +52,18 @@ día anterior). Códigos en inglés; UI en español.
 | `predicted_risk_post` | Riesgo recalculado al guardar el check-in (1ra vez). |
 | `risk_model_version` | `heuristic_v1/v2` — para comparar modelos entre sí. |
 
+## Otros archivos del data folder
+
+- `cache.json` — workouts crudos de Hevy (últimos ~50) con `exercises[].sets[]`
+  completos: `weight_kg`, `reps`, `rpe`, `type` (`warmup` se excluye del
+  análisis). Es la fuente para e1RM, tonelaje y volumen por grupo muscular.
+- `settings.json` → clave `meet` — el OBJETIVO del usuario (personal,
+  configurado en la app): `{ name, date (ISO), weightClass, targets: { squat,
+  bench, deadlift } }` con e1RM objetivo en LBS (0 = ese lift no tiene meta).
+  Úsalo como referencia de ritmo/progresión; si está vacío, el usuario aún no
+  configuró objetivo — no inventes uno.
+- `settings.json` → `dashboardWidgets` — solo presentación, ignóralo.
+
 ## Trampas conocidas
 - Filas creadas por backfill tienen `went` pero features vacías — son válidas
   (días sin check-in), no las descartes del cálculo de adherencia.

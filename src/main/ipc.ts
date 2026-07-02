@@ -1,7 +1,7 @@
 import { ipcMain, shell, BrowserWindow } from 'electron'
 import { dataDir } from './env'
 import { readLog, writeLogEntry } from './store'
-import { loadSettings, patchSettings, setHevyKey, hevyKeyMasked } from './settings'
+import { loadSettings, patchSettings, setHevyKey, hevyKeyMasked, WIDGET_KEYS } from './settings'
 import { testKey } from './hevy'
 import {
   refreshAll, buildState, eligibleSkipDays, computeDelay, trainedDates, markWentManual,
@@ -52,6 +52,31 @@ function normalizeSettingsPatch(p: SettingsPatch): SettingsPatch {
   if (typeof p.hevyKey === 'string') {
     const k = p.hevyKey.trim()
     if (k && k.length <= 200 && !/[^\x21-\x7e]/.test(k)) out.hevyKey = k
+  }
+  if (p.meet && typeof p.meet === 'object') {
+    const cleanLift = (v: unknown): number =>
+      Number.isFinite(Number(v)) ? Math.max(0, Math.min(2000, Math.round(Number(v)))) : 0
+    const date = String(p.meet.date ?? '').trim()
+    const wc = String(p.meet.weightClass ?? '').replace(/[\r\n\t]/g, ' ').trim().slice(0, 30)
+    out.meet = {
+      name: String(p.meet.name ?? '').replace(/[\r\n\t]/g, ' ').trim().slice(0, 60),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '',
+      weightClass: wc || null,
+      targets: {
+        squat: cleanLift(p.meet.targets?.squat),
+        bench: cleanLift(p.meet.targets?.bench),
+        deadlift: cleanLift(p.meet.targets?.deadlift),
+      },
+    }
+  }
+  if (p.dashboardWidgets && typeof p.dashboardWidgets === 'object') {
+    // solo claves del catálogo, solo booleanos — nada arbitrario al disco
+    const clean: Record<string, boolean> = {}
+    for (const k of WIDGET_KEYS) {
+      const v = (p.dashboardWidgets as Record<string, unknown>)[k]
+      if (typeof v === 'boolean') clean[k] = v
+    }
+    if (Object.keys(clean).length) out.dashboardWidgets = clean
   }
   return out
 }
@@ -113,6 +138,8 @@ function settingsView(): SettingsView {
     hevyKeyMasked: hevyKeyMasked(),
     dataDir: dataDir(),
     legacyAvailable: legacyAvailable(),
+    meet: s.meet,
+    dashboardWidgets: s.dashboardWidgets,
   }
 }
 
@@ -224,6 +251,11 @@ export function registerIpc(window: BrowserWindow): void {
     if (rest.weatherLon !== undefined) clean.weatherLon = rest.weatherLon
     if (rest.reminderHour !== undefined) clean.reminderHour = rest.reminderHour
     if (rest.reminderMinute !== undefined) clean.reminderMinute = rest.reminderMinute
+    if (rest.meet) clean.meet = rest.meet
+    if (rest.dashboardWidgets) {
+      // el patch puede traer un solo toggle — merge con lo existente
+      clean.dashboardWidgets = { ...loadSettings().dashboardWidgets, ...rest.dashboardWidgets }
+    }
     if (Object.keys(clean).length) patchSettings(clean)
     broadcastState()
     return settingsView()

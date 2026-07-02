@@ -121,15 +121,14 @@ function liftHistory(sets: DatedSet[], titles: Set<string>): { date: string; e1r
 const MAX_SLOPE_LBS_PER_DAY = 0.75
 
 /**
- * Extrapola la tendencia (regresión sobre las últimas ≤6 sesiones, ancladas al
- * último dato) al día del meet. Señal direccional, no promesa: exige ≥3
- * sesiones repartidas en ≥21 días y acota pendiente y resultado.
+ * Pendiente de la tendencia reciente (regresión sobre las últimas ≤6 sesiones)
+ * en lb/día. Exige ≥3 sesiones repartidas en ≥21 días — con menos, cualquier
+ * recta es adivinanza. Señal direccional, no promesa.
  */
-function projectTo(history: { date: string; e1rmLbs: number }[], targetDate: string, targetLbs: number): number | null {
+function trendSlope(history: { date: string; e1rmLbs: number }[]): number | null {
   const pts = history.slice(-6)
   if (pts.length < 3) return null
-  const lastPt = pts[pts.length - 1]
-  if (daysBetween(lastPt.date, pts[0].date) < 21) return null
+  if (daysBetween(pts[pts.length - 1].date, pts[0].date) < 21) return null
 
   const x0 = pts[0].date
   const xs = pts.map((p) => daysBetween(p.date, x0))
@@ -144,17 +143,15 @@ function projectTo(history: { date: string; e1rmLbs: number }[], targetDate: str
     den += (xs[i] - mx) ** 2
   }
   if (den === 0) return null
-  const slope = Math.max(-MAX_SLOPE_LBS_PER_DAY, Math.min(num / den, MAX_SLOPE_LBS_PER_DAY))
-  const raw = lastPt.e1rmLbs + slope * daysBetween(targetDate, lastPt.date)
-  return Math.round(Math.max(lastPt.e1rmLbs * 0.7, Math.min(raw, Math.max(targetLbs, lastPt.e1rmLbs) * 1.25)))
+  return Math.max(-MAX_SLOPE_LBS_PER_DAY, Math.min(num / den, MAX_SLOPE_LBS_PER_DAY))
 }
 
 function buildMeet(sets: DatedSet[]): MeetInsight {
   const m = loadSettings().meet
   const today = logicalToday()
-  const daysLeft = daysBetween(m.date, today)
-  const span = Math.max(1, daysBetween(m.date, m.baselineDate))
-  const elapsed = Math.min(span, Math.max(0, daysBetween(today, m.baselineDate)))
+  const configured = Boolean(m.date) && Object.values(m.targets).some((t) => t > 0)
+  const daysLeft = m.date ? Math.max(0, daysBetween(m.date, today)) : 0
+  const weeksLeft = Math.max(daysLeft / 7, 0.1)
 
   const lifts: LiftProgress[] = (Object.keys(LIFT_TITLES) as (keyof MeetLifts)[]).map((key) => {
     const titles = new Set(LIFT_TITLES[key])
@@ -162,38 +159,56 @@ function buildMeet(sets: DatedSet[]): MeetInsight {
     const current =
       bestE1rm(sets, titles, addDays(today, -21), today) ??
       bestE1rm(sets, titles, addDays(today, -45), today)
-    const baseline = m.baseline[key]
-    const target = m.targets[key]
-    const expected = Math.round((baseline + ((target - baseline) * elapsed) / span) * 10) / 10
     const cur = current !== null ? Math.round(current) : null
-    const diff = cur !== null ? Math.round((cur - expected) * 10) / 10 : null
+    const target = m.targets[key]
     const history = liftHistory(sets, titles)
+
+    // Todo mira HACIA ADELANTE desde hoy: cuánto hay que ganar por semana
+    // (needed) vs cuánto se viene ganando (trend); la proyección es la
+    // tendencia extendida hasta el día del meet, acotada a rango sano.
+    const needed = cur !== null && target > 0 && daysLeft > 0
+      ? Math.round(((target - cur) / weeksLeft) * 10) / 10
+      : null
+    const slope = trendSlope(history)
+    const trendWk = slope !== null ? Math.round(slope * 7 * 10) / 10 : null
+
+    let projected: number | null = null
+    if (cur !== null && slope !== null && daysLeft > 0) {
+      const raw = cur + slope * daysLeft
+      projected = Math.round(Math.max(cur * 0.7, Math.min(raw, Math.max(target, cur) * 1.25)))
+    }
+
+    let status: PaceStatus = 'nodata'
+    if (cur !== null && target > 0) {
+      if (cur >= target) status = 'ahead'
+      else if (projected !== null) status = paceStatus(projected - target, 5)
+      // sin tendencia todavía → nodata (el chip lo explica)
+    }
+
     return {
       key, label: LIFT_LABELS[key],
-      currentLbs: cur, expectedLbs: expected,
-      targetLbs: target, baselineLbs: baseline,
-      diffLbs: diff, status: paceStatus(diff, 7.5),
-      history,
-      projectedLbs: projectTo(history, m.date, target),
+      currentLbs: cur, targetLbs: target,
+      neededPerWeek: needed, trendPerWeek: trendWk,
+      projectedLbs: projected, status, history,
     }
   })
 
-  const allHaveData = lifts.every((l) => l.currentLbs !== null)
-  const totalCurrent = allHaveData ? lifts.reduce((a, l) => a + (l.currentLbs ?? 0), 0) : null
-  const totalExpected = Math.round(lifts.reduce((a, l) => a + l.expectedLbs, 0))
-  const totalTarget = lifts.reduce((a, l) => a + l.targetLbs, 0)
-  const totalBaseline = lifts.reduce((a, l) => a + l.baselineLbs, 0)
-  const totalDiff = totalCurrent !== null ? totalCurrent - totalExpected : null
+  const scored = lifts.filter((l) => l.targetLbs > 0)
+  const allHaveData = scored.length > 0 && scored.every((l) => l.currentLbs !== null)
+  const totalCurrent = allHaveData ? scored.reduce((a, l) => a + (l.currentLbs ?? 0), 0) : null
+  const totalTarget = scored.reduce((a, l) => a + l.targetLbs, 0)
+  const totalProjected = allHaveData && scored.every((l) => l.projectedLbs !== null || (l.currentLbs ?? 0) >= l.targetLbs)
+    ? scored.reduce((a, l) => a + (l.projectedLbs ?? l.currentLbs ?? 0), 0)
+    : null
 
   return {
-    name: m.name, date: m.date, weightClass: m.weightClass,
-    baselineDate: m.baselineDate, daysLeft,
+    configured,
+    name: m.name, date: m.date, weightClass: m.weightClass, daysLeft,
     lifts,
     totalCurrentLbs: totalCurrent,
-    totalExpectedLbs: totalExpected,
     totalTargetLbs: totalTarget,
-    totalBaselineLbs: totalBaseline,
-    status: paceStatus(totalDiff, 15),
+    totalProjectedLbs: totalProjected,
+    status: totalProjected !== null ? paceStatus(totalProjected - totalTarget, 15) : 'nodata',
   }
 }
 

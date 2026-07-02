@@ -21,29 +21,29 @@ export interface LiftProgress {
   label: string
   /** e1RM estimado de sets recientes en Hevy (lbs); null = sin datos frescos */
   currentLbs: number | null
-  /** dónde deberías estar HOY en la línea baseline→target */
-  expectedLbs: number
   targetLbs: number
-  baselineLbs: number
-  diffLbs: number | null
-  status: PaceStatus
-  /** mejor e1RM por sesión (ASC) — la trayectoria real del lift */
-  history: { date: string; e1rmLbs: number }[]
+  /** lb/semana que hay que ganar desde HOY para llegar a la meta */
+  neededPerWeek: number | null
+  /** lb/semana que llevas según la tendencia reciente (regresión) */
+  trendPerWeek: number | null
   /** e1RM extrapolado al día del meet según la tendencia reciente */
   projectedLbs: number | null
+  status: PaceStatus
+  /** fuerza pico por sesión (mejor e1RM en ventana 21d), ASC */
+  history: { date: string; e1rmLbs: number }[]
 }
 
 export interface MeetInsight {
+  /** false = el usuario aún no configuró su objetivo (widget en estado setup) */
+  configured: boolean
   name: string
   date: string
   weightClass: string | null
-  baselineDate: string
   daysLeft: number
   lifts: LiftProgress[]
   totalCurrentLbs: number | null
-  totalExpectedLbs: number
   totalTargetLbs: number
-  totalBaselineLbs: number
+  totalProjectedLbs: number | null
   status: PaceStatus
 }
 
@@ -140,6 +140,13 @@ export interface EligibleSkipDay {
   current: string | null
 }
 
+export interface MeetSettings {
+  name: string
+  date: string
+  weightClass: string | null
+  targets: { squat: number; bench: number; deadlift: number }
+}
+
 export interface SettingsView {
   userId: string
   restDays: number[]
@@ -151,6 +158,8 @@ export interface SettingsView {
   hevyKeyMasked: string | null
   dataDir: string
   legacyAvailable: boolean
+  meet: MeetSettings
+  dashboardWidgets: Record<string, boolean>
 }
 
 export interface SettingsPatch {
@@ -161,6 +170,8 @@ export interface SettingsPatch {
   reminderHour?: number
   reminderMinute?: number
   hevyKey?: string
+  meet?: MeetSettings
+  dashboardWidgets?: Record<string, boolean>
 }
 
 export type UpdaterEvent =
