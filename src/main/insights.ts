@@ -88,6 +88,49 @@ function paceStatus(diff: number | null, tolerance: number): PaceStatus {
   return 'ontrack'
 }
 
+/** Mejor e1RM por sesión (fecha lógica), ASC — la línea real del lift. */
+function liftHistory(sets: DatedSet[], titles: Set<string>): { date: string; e1rmLbs: number }[] {
+  const byDate = new Map<string, number>()
+  for (const s of sets) {
+    if (!titles.has(s.exercise.toLowerCase())) continue
+    const v = e1rmLbs(s.weightKg, s.reps, s.rpe)
+    if (v === null) continue
+    const prev = byDate.get(s.date)
+    if (prev === undefined || v > prev) byDate.set(s.date, v)
+  }
+  return [...byDate.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, v]) => ({ date, e1rmLbs: Math.round(v) }))
+    .slice(-30)
+}
+
+/**
+ * Extrapola la tendencia (regresión lineal sobre las últimas ≤6 sesiones) al
+ * día del meet. Señal direccional, no promesa — se acota a un rango sano para
+ * que un single suelto no dispare la línea al infinito.
+ */
+function projectTo(history: { date: string; e1rmLbs: number }[], targetDate: string, targetLbs: number): number | null {
+  const pts = history.slice(-6)
+  if (pts.length < 2) return null
+  const x0 = pts[0].date
+  const xs = pts.map((p) => daysBetween(p.date, x0))
+  const ys = pts.map((p) => p.e1rmLbs)
+  const n = xs.length
+  const mx = xs.reduce((a, b) => a + b, 0) / n
+  const my = ys.reduce((a, b) => a + b, 0) / n
+  let num = 0
+  let den = 0
+  for (let i = 0; i < n; i++) {
+    num += (xs[i] - mx) * (ys[i] - my)
+    den += (xs[i] - mx) ** 2
+  }
+  if (den === 0) return null
+  const slope = num / den
+  const raw = my + slope * (daysBetween(targetDate, x0) - mx)
+  const last = ys[ys.length - 1]
+  return Math.round(Math.max(last * 0.6, Math.min(raw, Math.max(targetLbs, last) * 1.3)))
+}
+
 function buildMeet(sets: DatedSet[]): MeetInsight {
   const m = loadSettings().meet
   const today = logicalToday()
@@ -106,11 +149,14 @@ function buildMeet(sets: DatedSet[]): MeetInsight {
     const expected = Math.round((baseline + ((target - baseline) * elapsed) / span) * 10) / 10
     const cur = current !== null ? Math.round(current) : null
     const diff = cur !== null ? Math.round((cur - expected) * 10) / 10 : null
+    const history = liftHistory(sets, titles)
     return {
       key, label: LIFT_LABELS[key],
       currentLbs: cur, expectedLbs: expected,
       targetLbs: target, baselineLbs: baseline,
       diffLbs: diff, status: paceStatus(diff, 7.5),
+      history,
+      projectedLbs: projectTo(history, m.date, target),
     }
   })
 
@@ -122,7 +168,8 @@ function buildMeet(sets: DatedSet[]): MeetInsight {
   const totalDiff = totalCurrent !== null ? totalCurrent - totalExpected : null
 
   return {
-    name: m.name, date: m.date, weightClass: m.weightClass, daysLeft,
+    name: m.name, date: m.date, weightClass: m.weightClass,
+    baselineDate: m.baselineDate, daysLeft,
     lifts,
     totalCurrentLbs: totalCurrent,
     totalExpectedLbs: totalExpected,

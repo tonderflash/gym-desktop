@@ -27,12 +27,17 @@ export interface LiftProgress {
   baselineLbs: number
   diffLbs: number | null
   status: PaceStatus
+  /** mejor e1RM por sesión (ASC) — la trayectoria real del lift */
+  history: { date: string; e1rmLbs: number }[]
+  /** e1RM extrapolado al día del meet según la tendencia reciente */
+  projectedLbs: number | null
 }
 
 export interface MeetInsight {
   name: string
   date: string
   weightClass: string | null
+  baselineDate: string
   daysLeft: number
   lifts: LiftProgress[]
   totalCurrentLbs: number | null
