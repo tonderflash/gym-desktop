@@ -98,11 +98,26 @@ function backupDaily(): void {
 }
 
 // ── Cache de workouts Hevy ───────────────────────────────────────────────
+// El API devuelve el workout completo y el cache lo persiste tal cual; estos
+// tipos describen lo que ya está en disco (sets con peso/reps/rpe incluidos).
+export interface HevySet {
+  type?: string // 'warmup' | 'normal' | 'failure' | …
+  weight_kg?: number | null
+  reps?: number | null
+  rpe?: number | null
+}
+
+export interface HevyExercise {
+  title?: string
+  sets?: HevySet[]
+}
+
 export interface HevyWorkout {
   id: string
   title: string
   start_time: string
   end_time: string
+  exercises?: HevyExercise[]
 }
 
 export interface HevyCache {

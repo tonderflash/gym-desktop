@@ -12,6 +12,80 @@ export interface RiskFactor {
 
 export type CheckinStatus = 'open' | 'pending' | 'done' | 'late'
 
+// ── Insights del dashboard (calculados en main desde Hevy cache + CSV) ──────
+
+export type PaceStatus = 'ahead' | 'ontrack' | 'behind' | 'nodata'
+
+export interface LiftProgress {
+  key: 'squat' | 'bench' | 'deadlift'
+  label: string
+  /** e1RM estimado de sets recientes en Hevy (lbs); null = sin datos frescos */
+  currentLbs: number | null
+  /** dónde deberías estar HOY en la línea baseline→target */
+  expectedLbs: number
+  targetLbs: number
+  baselineLbs: number
+  diffLbs: number | null
+  status: PaceStatus
+}
+
+export interface MeetInsight {
+  name: string
+  date: string
+  weightClass: string | null
+  daysLeft: number
+  lifts: LiftProgress[]
+  totalCurrentLbs: number | null
+  totalExpectedLbs: number
+  totalTargetLbs: number
+  totalBaselineLbs: number
+  status: PaceStatus
+}
+
+export interface MuscleInsight {
+  key: string
+  label: string
+  /** series efectivas (ponderadas por implicación) últimos 7 días */
+  sets7d: number
+  /** objetivo semanal del programa */
+  targetSets: number
+  lastDaysAgo: number | null
+}
+
+export interface WeekVolume {
+  weekStart: string
+  tonnageLbs: number
+  sessions: number
+}
+
+export interface VolumeInsight {
+  /** semanas ASC, la última es la actual (parcial) */
+  weeks: WeekVolume[]
+  thisWeekLbs: number
+  avg4Lbs: number | null
+  pctVsAvg: number | null
+}
+
+export interface PrInsight {
+  exercise: string
+  e1rmLbs: number
+  prevLbs: number
+  date: string
+}
+
+export interface Finding {
+  text: string
+  tone: 'ok' | 'warn' | 'info'
+}
+
+export interface Insights {
+  meet: MeetInsight
+  muscles: MuscleInsight[]
+  volume: VolumeInsight
+  prs: PrInsight[]
+  findings: Finding[]
+}
+
 export interface AppState {
   version: string
   hevyConfigured: boolean
@@ -32,6 +106,7 @@ export interface AppState {
   debt: { date: string; label: string }[]
   todayRow: Record<string, string> | null
   weather: { rainProb: number | null; tempMax: number | null }
+  insights: Insights
   lastError: string | null
 }
 

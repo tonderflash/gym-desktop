@@ -1,23 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Utensils, Plus, Pencil, CalendarDays, Flame, ChevronRight,
+  Utensils, Plus, CalendarDays, Flame, ChevronRight,
 } from 'lucide-react'
 import type { FeatureDescriptor } from '../types'
 import './nutrition.css'
 import { nt, type NutritionStore, type PlanDay, type Meal, type Food } from './api'
 import { SEED_FOODS, SEED_PLAN } from './seed'
 import {
-  foodMap, totalMacro, mealMacro, roundMacro, itemMacro, itemLabel,
+  foodMap, totalMacro, roundMacro,
   todayIso, dowOf, dowLong, dowShort, ddmon, lastNDays, parseIso, pct,
   ZERO, type Macro,
 } from './compute'
 import { MealEditor } from './MealEditor'
 
 type Status = 'loading' | 'error' | 'ready'
-type Editor =
-  | { kind: 'log'; date: string }
-  | { kind: 'plan'; dayId: string }
-  | null
+type Editor = { kind: 'plan'; dayId: string } | null
 
 // ── sub-componentes de presentación ───────────────────────────────────────
 function KcalRing({ value, target }: { value: number; target: number }) {
@@ -63,41 +60,6 @@ function MacroBars({ consumed, target }: { consumed: Macro; target: Macro }) {
               <div className={`fill ${r.v > r.t && r.t > 0 ? 'over' : ''}`} style={{ width: `${Math.min(100, p)}%` }} />
             </div>
             <span className="val nt-mono"><b>{Math.round(r.v)}</b> / {Math.round(r.t)} g</span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function MealsList({ meals, fm, muted }: { meals: Meal[]; fm: Map<string, import('./api').Food>; muted?: boolean }) {
-  return (
-    <div style={muted ? { opacity: .72 } : undefined}>
-      {meals.map((m) => {
-        const mk = roundMacro(mealMacro(m, fm))
-        if (m.items.length === 0) return null
-        return (
-          <div className="nt-meal" key={m.id}>
-            <div className="nt-meal-head">
-              <span className="nm">{m.name}</span>
-              <span className="kc nt-mono">{mk.kcal} kcal · P{mk.protein} C{mk.carbs} G{mk.fat}</span>
-            </div>
-            <div className="nt-items">
-              {m.items.map((it, i) => {
-                const im = roundMacro(itemMacro(it, fm))
-                return (
-                  <div className="nt-it" key={`${m.id}-${i}`}>
-                    <span className="nm">{itemLabel(it, fm)}</span>
-                    <span className="mc nt-mono">
-                      <span>{im.kcal} kcal</span>
-                      <span className="p">{im.protein}</span>
-                      <span className="c">{im.carbs}</span>
-                      <span className="f">{im.fat}</span>
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
           </div>
         )
       })}
@@ -235,27 +197,9 @@ function NutritionPage() {
   const selPlan = planDayOf(selDay)
   const selConsumed = selLog ? totalMacro(selLog.meals, fm) : { ...ZERO }
 
-  // estado inicial del editor
+  // editor de plan semanal (sheet/modal — sólo para editar la plantilla)
   let editorNode: React.ReactNode = null
-  if (editor?.kind === 'log') {
-    const existing = store.logs[editor.date]
-    const plan = planDayOf(editor.date)
-    const initial = mergeMealTemplates(plan?.meals ?? [], existing?.meals ?? [])
-    editorNode = (
-      <MealEditor
-        title={`Registrar · ${ddmon(editor.date)}`}
-        subtitle={`${dowLong(editor.date)}${plan ? ` · ${plan.focus}` : ''} — abre una comida y guarda sólo esa`}
-        foods={store.foods}
-        initialMeals={initial}
-        target={targetOf(editor.date)}
-        saving={busy}
-        savedMealIds={(existing?.meals ?? []).map((meal) => meal.id)}
-        onSaveMeal={(meal, newFoods) => void saveLogMeal(editor.date, meal, newFoods)}
-        onCancel={() => setEditor(null)}
-        onDelete={existing ? () => void deleteLog(editor.date) : undefined}
-      />
-    )
-  } else if (editor?.kind === 'plan') {
+  if (editor?.kind === 'plan') {
     const day = store.plan.days.find((d) => d.id === editor.dayId)
     if (day) {
       editorNode = (
@@ -283,8 +227,11 @@ function NutritionPage() {
             <h1 className="nt-title">Comidas<br />&amp; macros</h1>
             <p className="nt-sub">Tu plan periodizado es el objetivo diario · registra lo que comes</p>
           </div>
-          <button className="nt-btn" onClick={() => setEditor({ kind: 'log', date: today })}>
-            <Plus size={17} /> Registrar hoy
+          <button className="nt-btn" onClick={() => {
+            setSelDay(today)
+            setTimeout(() => document.getElementById('nt-detalle')?.scrollIntoView({ behavior: 'smooth' }), 50)
+          }}>
+            <Plus size={17} /> Hoy
           </button>
         </header>
 
@@ -355,9 +302,11 @@ function NutritionPage() {
           </div>
         </section>
 
-        {/* BREAKDOWN del día seleccionado */}
-        <section className="nt-sec">
-          <div className="nt-h2"><Flame size={17} /><b>Detalle del día</b><span className="ln" /></div>
+        {/* BREAKDOWN del día seleccionado — inline editor, sin modal */}
+        <section className="nt-sec" id="nt-detalle">
+          <div className="nt-h2"><Flame size={17} /><b>Detalle del día</b><span className="ln" />
+            {!selLog && <span className="tag">sin registro · el plan es el punto de partida</span>}
+          </div>
           <div className="nt-card nt-pad">
             <div className="nt-bd-head">
               <div className="nt-bd-date">
@@ -365,40 +314,18 @@ function NutritionPage() {
                 <span style={{ color: 'var(--nt-mut)', fontSize: 13 }}>{dowLong(selDay)}</span>
                 {selPlan && <span className="f">{selPlan.focus}</span>}
               </div>
-              <div className="nt-bd-actions">
-                <button className="nt-btn sm" onClick={() => setEditor({ kind: 'log', date: selDay })}>
-                  {selLog ? <><Pencil size={14} /> Editar</> : <><Plus size={15} /> Registrar</>}
-                </button>
-              </div>
             </div>
-
-            {selLog ? (
-              <>
-                <div style={{ margin: '14px 0 6px' }}>
-                  <MacroBars consumed={selConsumed} target={selTarget} />
-                  <p className="nt-sub nt-mono" style={{ marginTop: 10 }}>
-                    {Math.round(selConsumed.kcal)} / {Math.round(selTarget.kcal)} kcal
-                  </p>
-                </div>
-                <MealsList meals={selLog.meals} fm={fm} />
-              </>
-            ) : (
-              <>
-                <div className="nt-empty">
-                  <b>Sin registro este día</b>
-                  Abajo está lo que dice tu plan — tócalo en “Registrar” y ajústalo a lo que comiste.
-                </div>
-                {selPlan && (
-                  <>
-                    <div className="nt-h2" style={{ margin: '6px 0 4px' }}>
-                      <span className="tag" style={{ letterSpacing: '.04em' }}>SEGÚN TU PLAN · {Math.round(selTarget.kcal)} kcal</span>
-                      <span className="ln" />
-                    </div>
-                    <MealsList meals={selPlan.meals} fm={fm} muted />
-                  </>
-                )}
-              </>
-            )}
+            <MealEditor
+              inline
+              key={selDay}
+              foods={store.foods}
+              initialMeals={mergeMealTemplates(selPlan?.meals ?? [], selLog?.meals ?? [])}
+              target={selTarget}
+              saving={busy}
+              savedMealIds={(selLog?.meals ?? []).map((m) => m.id)}
+              onSaveMeal={(meal, newFoods) => void saveLogMeal(selDay, meal, newFoods)}
+              onDelete={selLog ? () => void deleteLog(selDay) : undefined}
+            />
           </div>
         </section>
 

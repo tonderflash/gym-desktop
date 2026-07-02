@@ -11,6 +11,7 @@ import {
   calculateRisk, checkinFeaturesFromRow,
 } from './logic'
 import { RISK_MODEL_NAME, TRAINING_ROTATION } from '@shared/schema'
+import { buildInsights } from './insights'
 import { sanitizeCsvText } from './csv'
 import type { AppState, EligibleSkipDay } from '@shared/types'
 
@@ -331,6 +332,7 @@ export function buildState(): AppState {
       rainProb: todayRow?.wx_rain_prob ? Number(todayRow.wx_rain_prob) : null,
       tempMax: todayRow?.wx_temp_max ? Number(todayRow.wx_temp_max) : null,
     },
+    insights: buildInsights(workouts, log),
     lastError,
   }
 }

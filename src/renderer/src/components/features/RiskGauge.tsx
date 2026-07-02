@@ -1,3 +1,6 @@
+import { useEffect, useState } from 'react'
+import { AnimatedNumber } from '../ui/AnimatedNumber'
+
 // Mapeo de niveles a la paleta del manual: bajo = cyan (identidad, calma),
 // medio = ámbar, alto = coral. El número en Nunito Black — momento de marca.
 const ringColor: Record<string, string> = {
@@ -12,6 +15,12 @@ export function RiskGauge({ pct, level }: { pct: number; level: 'low' | 'med' | 
   const r = 56
   const c = 2 * Math.PI * r
   const filled = (pct / 100) * c
+  // el anillo arranca en 0 y se dibuja hasta el valor (mismo replay que los números)
+  const [drawn, setDrawn] = useState(0)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setDrawn(filled))
+    return () => cancelAnimationFrame(id)
+  }, [filled])
 
   return (
     <div className="flex items-center gap-5">
@@ -21,11 +30,14 @@ export function RiskGauge({ pct, level }: { pct: number; level: 'low' | 'med' | 
           <circle
             cx="64" cy="64" r={r} fill="none"
             stroke={ringColor[level]} strokeWidth="10" strokeLinecap="round"
-            strokeDasharray={`${filled} ${c - filled}`}
+            strokeDasharray={`${drawn} ${c - drawn}`}
+            style={{ transition: 'stroke-dasharray .9s cubic-bezier(.2,.7,.3,1)' }}
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-display text-[34px] font-black leading-none text-ink">{pct}%</span>
+          <span className="font-display text-[34px] font-black leading-none text-ink">
+            <AnimatedNumber value={pct} suffix="%" />
+          </span>
           <span className="mt-1 text-[11px] text-ink-dim">de faltar</span>
         </div>
       </div>

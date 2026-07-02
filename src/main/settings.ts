@@ -5,6 +5,22 @@ import { paths } from './env'
 import { DEFAULT_FACTORS, DEFAULT_REST_DAYS, DEFAULT_REMINDER } from '@shared/schema'
 import type { FactorDef } from '@shared/types'
 
+export interface MeetLifts {
+  squat: number
+  bench: number
+  deadlift: number
+}
+
+/** Objetivo de competencia. Cargas en LBS (e1RM); editable en settings.json. */
+export interface MeetConfig {
+  name: string
+  date: string // ISO yyyy-mm-dd
+  weightClass: string | null
+  baselineDate: string
+  baseline: MeetLifts
+  targets: MeetLifts
+}
+
 export interface Settings {
   userId: string
   restDays: number[]
@@ -17,6 +33,7 @@ export interface Settings {
   hevyKeyPlain: string | null     // fallback si safeStorage no está disponible
   lastReminderDate: string | null
   migratedFromGymBar: boolean
+  meet: MeetConfig
 }
 
 let cached: Settings | null = null
@@ -34,6 +51,16 @@ function defaults(): Settings {
     hevyKeyPlain: null,
     lastReminderDate: null,
     migratedFromGymBar: false,
+    // Escenario "realista" del reporte de análisis (01 jun 2026) convertido a
+    // LBS; baseline = e1RMs del programa balanceado (29 jun 2026).
+    meet: {
+      name: 'Copa Santo Domingo',
+      date: '2026-10-31',
+      weightClass: '66 kg',
+      baselineDate: '2026-06-29',
+      baseline: { squat: 181, bench: 160, deadlift: 245 },
+      targets: { squat: 303, bench: 165, deadlift: 347 },
+    },
   }
 }
 
@@ -42,7 +69,19 @@ export function loadSettings(): Settings {
   if (existsSync(paths.settings())) {
     try {
       const raw = JSON.parse(readFileSync(paths.settings(), 'utf-8'))
-      cached = { ...defaults(), ...raw }
+      const d = defaults()
+      // merge profundo del meet: settings.json viejos no lo traen, y uno
+      // editado a mano puede traerlo incompleto
+      cached = {
+        ...d,
+        ...raw,
+        meet: {
+          ...d.meet,
+          ...(raw.meet ?? {}),
+          baseline: { ...d.meet.baseline, ...(raw.meet?.baseline ?? {}) },
+          targets: { ...d.meet.targets, ...(raw.meet?.targets ?? {}) },
+        },
+      }
       return cached!
     } catch {
       /* archivo corrupto → defaults */
