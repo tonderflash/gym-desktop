@@ -13,7 +13,11 @@ const STATUS_TONE: Record<PaceStatus, 'ok' | 'warn' | 'neutral' | 'danger'> = {
 
 const DAY_MS = 86_400_000
 const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+// gap sin sesiones de este lift > 25 días → NO interpolar una diagonal falsa
+// entre esos puntos (rompe la línea; una racha de descanso/lesión no es progreso)
+const GAP_BREAK_DAYS = 25
 const dayOf = (iso: string): number => new Date(iso + 'T12:00:00').getTime() / DAY_MS
+const daysBetweenIso = (a: string, b: string): number => Math.round(dayOf(a) - dayOf(b))
 // fecha local, NO toISOString() (UTC movería "hoy" un día por la noche)
 const todayIso = (): string => {
   const d = new Date()
@@ -54,7 +58,16 @@ function LiftChart({ lift, meetDate }: { lift: LiftProgress; meetDate: string })
   const y = (v: number): number => H - ((v - lo) / (hi - lo)) * H
   const py = (v: number): number => (y(v) / H) * 100 // en %
 
-  const histPts = lift.history.map((h) => `${xOf(h.date).toFixed(1)},${y(h.e1rmLbs).toFixed(1)}`).join(' ')
+  // Segmentos: cortar donde el hueco entre sesiones consecutivas es real (>25d)
+  // — evita dibujar una diagonal inventada durante semanas sin entrenar este lift.
+  const segments: { date: string; e1rmLbs: number }[][] = []
+  for (const h of lift.history) {
+    const last = segments[segments.length - 1]
+    const prev = last?.[last.length - 1]
+    if (prev && daysBetweenIso(h.date, prev.date) > GAP_BREAK_DAYS) segments.push([h])
+    else if (last) last.push(h)
+    else segments.push([h])
+  }
   const xToday = xOf(today)
   const cur = lift.currentLbs
 
@@ -81,14 +94,27 @@ function LiftChart({ lift, meetDate }: { lift: LiftProgress; meetDate: string })
               vectorEffect="non-scaling-stroke" opacity="0.45"
             />
           )}
-          {/* pasado: tu fuerza medida */}
-          {lift.history.length > 1 && (
-            <polyline
-              points={histPts} fill="none"
-              stroke="var(--color-accent)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"
-              vectorEffect="non-scaling-stroke" pathLength={1} className="chart-draw"
-            />
-          )}
+          {/* pasado: tu fuerza medida — un <polyline> por tramo SIN huecos reales,
+              más un punto por sesión (si no, las sesiones recientes muy juntas
+              se vuelven ilegibles al lado de tramos largos sin entrenar) */}
+          {segments.map((seg, i) => (
+            <g key={i}>
+              {seg.length > 1 && (
+                <polyline
+                  points={seg.map((h) => `${xOf(h.date).toFixed(1)},${y(h.e1rmLbs).toFixed(1)}`).join(' ')}
+                  fill="none" stroke="var(--color-accent)" strokeWidth="2.5"
+                  strokeLinejoin="round" strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke" pathLength={1} className="chart-draw"
+                />
+              )}
+              {seg.map((h) => (
+                <circle
+                  key={h.date} cx={xOf(h.date)} cy={y(h.e1rmLbs)} r="2"
+                  fill="var(--color-accent)" vectorEffect="non-scaling-stroke"
+                />
+              ))}
+            </g>
+          ))}
           {/* futuro necesario: de tu fuerza de hoy a la meta el día del meet */}
           {cur !== null && lift.targetLbs > 0 && (
             <line
@@ -271,10 +297,11 @@ export function MeetCard({ meet, onEdit }: { meet: MeetInsight; onEdit: () => vo
       </div>
 
       <p className="text-[10px] text-ink-faint">
-        Eje X = calendario real, desde tu primera sesión registrada hasta el día del meet. En HOY tu fuerza
-        se bifurca: la punteada gris sube hasta la meta (lo que hace falta) y la de color sigue tu tendencia
-        de las últimas ~6 sesiones (a dónde vas). Color por encima del gris = llegas. Fuerza = mejor e1RM
-        en ventana de 21 días, de tus sets en Hevy.
+        Eje X = calendario real, desde tu primera sesión registrada hasta el día del meet; cada punto es una
+        sesión real y la línea se corta si pasaron 25+ días sin entrenar ese lift (no inventa progreso en los
+        huecos). En HOY tu fuerza se bifurca: la punteada gris sube hasta la meta (lo que hace falta) y la de
+        color sigue tu tendencia de las últimas ~6 sesiones (a dónde vas). Color por encima del gris = llegas.
+        Fuerza = mejor e1RM en ventana de 21 días, de tus sets en Hevy.
       </p>
     </div>
   )
