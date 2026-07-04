@@ -27,6 +27,27 @@ export interface SessionSummary {
   avg_confidence: number | null
 }
 
+export interface HevyRepMatch {
+  logged: number | null
+  detected: number | null
+  ok: boolean
+}
+
+/** Serie de Hevy enlazada a una sesión VBT (1 video = 1 serie). */
+export interface HevyLink {
+  set_id: number
+  set_number: number
+  set_type: string
+  exercise_title: string
+  weight_kg: number | null
+  reps: number | null
+  rpe: number | null
+  rep_match: HevyRepMatch | null // null = aún sin analizar
+  // true si el peso se corrigió en Hevy después de crear la sesión (la sesión
+  // guarda una copia) — remediable con gv.updateWeight(id, {from_hevy:true})
+  weight_drift: boolean
+}
+
 export interface SessionRow {
   id: number
   date: string
@@ -37,6 +58,44 @@ export interface SessionRow {
   athlete_slug: string | null
   pose_engine: string
   summary: SessionSummary
+  hevy: HevyLink | null
+}
+
+// ── día de Hevy (GET /api/hevy/day/<fecha>/) ──────────────────────────────
+export interface HevyDaySet {
+  id: number
+  index: number
+  number: number
+  type: string
+  weight_kg: number | null
+  reps: number | null
+  rpe: number | null
+  session_id: number | null // sesión VBT ya enlazada a esta serie
+  session_analyzed: boolean
+}
+
+export interface HevyDayExercise {
+  id: number
+  title: string
+  exercise_slug: string | null // null = sin mapear a un Exercise de GymVision
+  exercise_name: string | null
+  sets: HevyDaySet[]
+}
+
+export interface HevyDayWorkout {
+  id: number
+  hevy_id: string
+  title: string
+  start_time: string
+  exercises: HevyDayExercise[]
+}
+
+export interface HevyDay {
+  date: string
+  configured: boolean
+  last_sync: string | null
+  sync_error: string | null
+  workouts: HevyDayWorkout[]
 }
 
 export interface TrendPoint {
@@ -118,13 +177,14 @@ export interface SessionDetail extends SessionRow {
 }
 
 export interface NewSession {
-  exercise: string
+  exercise?: string // opcional si viene hevy_set_id (se resuelve desde Hevy)
   date: string
-  weight_kg: number
+  weight_kg?: number // opcional si viene hevy_set_id (precarga de Hevy)
   pose_engine: string
   video_path: string
   plate_diameter_m?: number
   notes?: string
+  hevy_set_id?: number
 }
 
 const API_BASE = 'http://127.0.0.1:8000/api'
@@ -183,6 +243,35 @@ export const gv = {
   session: (id: number) => call<SessionDetail>('session', id),
   activate: (slug: string) => call<Athlete>('activate', slug),
   createAthlete: (name: string) => call<Athlete>('createAthlete', name),
+  // Corrige el peso de una sesión sin re-analizar (recalcula solo el 1RM).
+  updateWeight: (id: number, payload: { from_hevy: true } | { weight_kg: number }) =>
+    callOrDirect<SessionDetail>(
+      'updateWeight',
+      () => directFetch<SessionDetail>(`/sessions/${id}/weight/`, {
+        method: 'POST', body: JSON.stringify(payload),
+      }),
+      id, payload,
+    ),
+  // Declara al proceso main que hay un pipeline en curso (subida/seed/análisis):
+  // activa la confirmación al cerrar la ventana y el powerSaveBlocker.
+  // Con un main desactualizado el canal no existe → ignorar (solo pierde la guarda).
+  setBusy: (reason: string | null) =>
+    call<{ ok: boolean }>('setBusy', reason).catch(() => ({ ok: false }) as ApiResult<{ ok: boolean }>),
+  // integración Hevy (espejo local en Django). Con main desactualizado cae a
+  // fetch directo (el sync directo depende de que Django ya tenga la key).
+  hevyDay: (date: string, refresh?: boolean) =>
+    callOrDirect<HevyDay>(
+      'hevyDay',
+      () => directFetch<HevyDay>(
+        `/hevy/day/${encodeURIComponent(date)}/${refresh ? '?refresh=1' : ''}`,
+        { timeoutMs: 30000 }),
+      date, refresh,
+    ),
+  hevySync: () =>
+    callOrDirect<{ ok: boolean; created: number; updated: number }>(
+      'hevySync',
+      () => directFetch(`/hevy/sync/`, { method: 'POST', body: '{}', timeoutMs: 30000 }),
+    ),
   // flujo de entrada de datos
   pickVideo: () => call<{ path: string; name: string }>('pickVideo'),
   createSession: (payload: NewSession) => call<SessionDetail>('createSession', payload),

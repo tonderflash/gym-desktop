@@ -3,6 +3,8 @@
 // `ext:gymvision:*`. Para desactivar la integración: BORRA esta carpeta y la
 // gemela en src/renderer/src/features/gymvision/.
 import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { setBusy } from '../../busy'
+import { getHevyKey } from '../../settings'
 
 // Base configurable por env; por defecto el runserver local de GymVision.
 const BASE = (process.env.GYMVISION_API ?? 'http://127.0.0.1:8000/api').replace(/\/$/, '')
@@ -42,6 +44,15 @@ async function call<T = unknown>(path: string, opts: CallOpts = {}): Promise<Api
 const q = (slug?: string) => (slug ? `?athlete=${encodeURIComponent(slug)}` : '')
 
 export function register(): void {
+  // Guarda de proceso: el renderer declara su pipeline activo y el registro
+  // global (main/busy.ts) activa el powerSaveBlocker; index.ts lo consulta
+  // antes de permitir el quit real. Cerrar la ventana solo la oculta, así que
+  // el pipeline sobrevive sin fricción.
+  ipcMain.handle('ext:gymvision:setBusy', (_e, reason?: string | null) => {
+    setBusy(typeof reason === 'string' && reason.trim() ? reason : null)
+    return { ok: true }
+  })
+
   ipcMain.handle('ext:gymvision:ping', () => call('/'))
   ipcMain.handle('ext:gymvision:athletes', () => call('/athletes/'))
   ipcMain.handle('ext:gymvision:exercises', () => call('/exercises/'))
@@ -53,6 +64,31 @@ export function register(): void {
     call(`/athletes/${encodeURIComponent(String(slug))}/activate/`, { method: 'POST' }))
   ipcMain.handle('ext:gymvision:createAthlete', (_e, name: string) =>
     call('/athletes/', { method: 'POST', body: JSON.stringify({ name: String(name ?? '').trim() }) }))
+
+  // ── integración Hevy (espejo local en Django) ──────────────────────────
+  // Lo entrenado ese día según Hevy, con cada serie enlazada (o no) a su
+  // sesión VBT. El endpoint puede auto-sincronizar contra Hevy → timeout amplio.
+  ipcMain.handle('ext:gymvision:hevyDay', (_e, date: string, refresh?: boolean) =>
+    call(`/hevy/day/${encodeURIComponent(String(date))}/${refresh ? '?refresh=1' : ''}`,
+      { timeoutMs: 30000 }))
+
+  // Reutiliza la API key que GymBar ya guarda en sus settings: Django la
+  // persiste en su config la primera vez y de ahí sincroniza solo.
+  ipcMain.handle('ext:gymvision:hevySync', () =>
+    call('/hevy/sync/', {
+      method: 'POST',
+      body: JSON.stringify({ api_key: getHevyKey() ?? '' }),
+      timeoutMs: 30000,
+    }))
+
+  // Corrige el peso de una sesión sin re-analizar: {from_hevy:true} toma el
+  // peso ya sincronizado de la serie enlazada; {weight_kg:N} es manual.
+  ipcMain.handle('ext:gymvision:updateWeight',
+    (_e, id: number, payload: Record<string, unknown>) =>
+      call(`/sessions/${Number(id)}/weight/`, {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {}),
+      }))
 
   // ── flujo de entrada de datos ──────────────────────────────────────────
   // Selector NATIVO de video (el renderer está en sandbox, no puede abrir FS).

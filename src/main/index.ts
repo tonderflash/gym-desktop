@@ -1,6 +1,7 @@
-import { app, BrowserWindow, nativeImage, shell, session } from 'electron'
+import { app, BrowserWindow, dialog, nativeImage, shell, session } from 'electron'
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { getBusyReason, setBusy } from './busy'
 import { ensureDirs, isDev, paths } from './env'
 import { loadSettings } from './settings'
 import { autoMigrateOnFirstRun } from './migrate'
@@ -16,6 +17,9 @@ import { registerExtensions } from './extensions/loader'
 type NavTarget = 'dashboard' | 'checkin' | 'history' | 'settings' | 'skip'
 
 let win: BrowserWindow | null = null
+// true solo durante un quit real (Cmd+Q / tray Salir): es lo único que permite
+// que la ventana se cierre de verdad en vez de ocultarse.
+let quitting = false
 
 function createWindow(): BrowserWindow {
   const w = new BrowserWindow({
@@ -37,7 +41,16 @@ function createWindow(): BrowserWindow {
   })
 
   w.on('ready-to-show', () => w.show())
-  // Al cerrar la ventana, soltar la referencia para que ensureWindow la recree.
+
+  // Patrón de app de tray en macOS: CERRAR = OCULTAR. El renderer sigue vivo
+  // con todo su estado (página actual, pipelines de análisis, overlays), así
+  // que reabrir te deja exactamente donde estabas. Solo el quit real cierra.
+  w.on('close', (e) => {
+    if (quitting) return
+    e.preventDefault()
+    w.hide()
+  })
+  // Solo tras un cierre REAL (quit) soltar la referencia.
   w.on('closed', () => { win = null })
 
   // Links externos: solo https, nunca file:/smb:/etc., y siempre fuera de la app
@@ -73,6 +86,15 @@ function ensureWindow(): BrowserWindow {
   return win
 }
 
+/** Trae la ventana al frente SIN navegar — conserva la página en la que el
+ *  usuario estaba (la ventana normalmente solo está oculta, no destruida). */
+function revealWindow(): void {
+  const w = ensureWindow()
+  if (w.isMinimized()) w.restore()
+  w.show()
+  w.focus()
+}
+
 /** Muestra la ventana y navega a la página pedida (flujo rápido desde el tray). */
 function showWindow(target: NavTarget = 'dashboard'): void {
   const w = ensureWindow()
@@ -89,7 +111,7 @@ function showWindow(target: NavTarget = 'dashboard'): void {
 }
 
 const trayActions: TrayActions = {
-  onOpen: () => showWindow('dashboard'),
+  onOpen: () => revealWindow(), // abrir = volver a donde estabas, no al dashboard
   onCheckin: () => showWindow('checkin'),
   onSkipReason: () => showWindow('skip'),
   onMarkWent: () => { if (markWentManual(logicalToday())) broadcastState() },
@@ -144,7 +166,31 @@ if (!gotLock) {
     // Dispara el primer ciclo (fetch → broadcastState → refreshTray) + timers.
     startScheduler(win)
 
-    app.on('activate', () => showWindow('dashboard'))
+    app.on('activate', () => revealWindow())
+  })
+
+  // Único punto de salida real. Si hay un proceso largo en curso (análisis de
+  // video), confirmar antes de matar el renderer.
+  app.on('before-quit', (e) => {
+    const reason = getBusyReason()
+    if (reason && win && !win.isDestroyed()) {
+      const choice = dialog.showMessageBoxSync(win, {
+        type: 'warning',
+        buttons: ['Seguir procesando', 'Salir de todas formas'],
+        defaultId: 0,
+        cancelId: 0,
+        message: 'Hay un proceso en curso',
+        detail: `${reason}\n\nEl análisis del servidor continúa aunque salgas, ` +
+                'pero perderás el progreso visual. Podrás reanudar desde ' +
+                '"Homologación pendiente".',
+      })
+      if (choice === 0) {
+        e.preventDefault()
+        return
+      }
+      setBusy(null)
+    }
+    quitting = true
   })
 
   // En macOS la app vive en el tray; cerrar ventana no mata el scheduler.

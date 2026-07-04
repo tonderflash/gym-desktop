@@ -252,3 +252,103 @@
 @keyframes gv-pop{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:none}}
 @keyframes gv-sweep{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
 .gv-reveal{animation:gv-slideup .4s cubic-bezier(.16,1,.3,1) backwards}
+
+/* ── flujo de día (precarga Hevy) ──────────────────────────────────────── */
+.gv-day{display:flex;flex-direction:column;gap:18px}
+.gv-day-h{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--gv-mut);margin-bottom:10px}
+.gv-day-block{display:block}
+.gv-day-chips{display:flex;flex-wrap:wrap;gap:10px}
+.gv-day-sync{display:inline-flex;align-items:center;gap:6px;font-size:10px;padding:6px 10px}
+
+.gv-day-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
+  background:#101216;border:3px solid #2a2e34;color:#fff;padding:10px 12px;margin-bottom:8px;
+  font-family:inherit;font-size:12px}
+.gv-day-row:hover{border-color:var(--gv-c3)}
+.gv-day-row .gv-day-ex{font-weight:800}
+.gv-day-sub{color:var(--gv-mut);font-size:10px;text-transform:uppercase;letter-spacing:.12em}
+.gv-day-okk{display:inline-flex;align-items:center;gap:5px;color:var(--gv-acid);font-weight:800;
+  font-size:11px;margin-left:auto}
+
+.gv-day-sets{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.gv-day-set{display:flex;align-items:center;gap:12px;background:#101216;border:3px solid #2a2e34;
+  padding:10px 12px;font-size:12px}
+.gv-day-set.picked{border-color:var(--gv-acid)}
+.gv-day-set.linked{border-style:dashed;opacity:.85}
+.gv-day-sn{font-weight:800;letter-spacing:.12em;font-size:10px;background:var(--gv-c2);color:#000;
+  border:2px solid #000;padding:3px 7px;flex:none}
+.gv-day-sl{color:var(--gv-ink);font-weight:700;flex:1}
+.gv-day-pick{display:inline-flex;align-items:center;gap:5px;font-size:10px;padding:6px 10px;flex:none}
+.gv-day-vid{display:inline-flex;align-items:center;gap:7px;color:var(--gv-acid);font-size:11px;
+  font-weight:700;max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gv-day-unpick{background:transparent;border:none;color:var(--gv-mut);cursor:pointer;
+  display:inline-flex;padding:2px}
+.gv-day-unpick:hover{color:var(--gv-mag)}
+.gv-day-openlink{display:inline-flex;align-items:center;gap:6px;background:transparent;
+  border:2px solid var(--gv-acid);color:var(--gv-acid);font-family:inherit;font-size:10px;
+  font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:5px 9px;cursor:pointer;flex:none}
+.gv-day-openlink:hover{background:var(--gv-acid);color:#000}
+
+.gv-day-opts{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.gv-day-seedcap{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gv-mut);
+  margin-bottom:12px}
+
+/* ── verificación: grid de miniaturas + check animado ─────────────────── */
+.gv-day-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px}
+.gv-thumb{position:relative;background:#101216;border:3px solid #2a2e34;overflow:hidden}
+.gv-thumb.ok{border-color:var(--gv-acid)}
+.gv-thumb.mismatch{border-color:#ffb020}
+.gv-thumb.error{border-color:var(--gv-mag)}
+.gv-thumb img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;filter:saturate(.85)}
+.gv-thumb-ph{display:flex;align-items:center;justify-content:center;aspect-ratio:16/10;color:var(--gv-mut)}
+.gv-thumb-cap{padding:7px 9px;font-size:10px;letter-spacing:.08em;color:var(--gv-mut);
+  border-top:2px solid #2a2e34}
+.gv-thumb-cap b{color:#fff}
+.gv-thumb[role="button"]{cursor:pointer}
+.gv-thumb[role="button"]:hover{border-color:var(--gv-c3)}
+.gv-thumb.ok[role="button"]:hover{border-color:var(--gv-acid)}
+
+.gv-thumb-spin{position:absolute;top:10px;right:10px;width:22px;height:22px;border:3px solid #2a2e34;
+  border-top-color:var(--gv-acid);border-radius:50%;animation:gv-rot .8s linear infinite}
+@keyframes gv-rot{to{transform:rotate(360deg)}}
+
+.gv-thumb-badge{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:6px;background:rgba(10,11,13,.55);backdrop-filter:blur(1px);
+  bottom:32px;font-size:11px;font-weight:800}
+.gv-thumb-badge.ok{color:var(--gv-acid)}
+.gv-thumb-badge.warn{color:#ffb020;text-align:center;padding:0 10px}
+.gv-thumb-badge.err{color:var(--gv-mag);text-align:center;padding:0 10px;font-size:10px}
+
+/* check dibujado: círculo + palomita con stroke-dashoffset, luego pop */
+.gv-ck{width:52px;height:52px;opacity:0;animation:gv-ck-in .3s ease forwards}
+.gv-ck-c{fill:none;stroke:var(--gv-acid);stroke-width:3;stroke-dasharray:145;stroke-dashoffset:145;
+  animation:gv-draw .5s cubic-bezier(.65,0,.45,1) forwards}
+.gv-ck-p{fill:none;stroke:var(--gv-acid);stroke-width:5;stroke-linecap:square;
+  stroke-dasharray:36;stroke-dashoffset:36;animation:gv-draw .35s cubic-bezier(.65,0,.45,1) forwards}
+@keyframes gv-draw{to{stroke-dashoffset:0}}
+@keyframes gv-ck-in{0%{opacity:0;transform:scale(.55)}70%{transform:scale(1.14)}
+  100%{opacity:1;transform:scale(1)}}
+
+.gv-day-summary{margin-top:16px;font-size:12px;color:var(--gv-mut)}
+.gv-day-summary b{color:var(--gv-acid)}
+
+/* ── banner de homologación pendiente / reanudar ──────────────────────── */
+.gv-resume{display:flex;align-items:center;gap:16px;justify-content:space-between;
+  background:#15130a;border:3px solid #ffb020;padding:14px 16px}
+.gv-resume.gv-frame{border:4px solid #000;box-shadow:7px 7px 0 #ffb020}
+.gv-resume-tx{display:flex;flex-direction:column;gap:3px;min-width:0}
+.gv-resume-tx b{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#ffb020}
+.gv-resume-tx span{font-size:11px;color:var(--gv-mut)}
+.gv-resume .gv-cta{flex:none}
+
+/* ── resumen del día (aterrizaje del DayFlow con datos) ───────────────── */
+.gv-day-aggr{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:12px;
+  font-size:11px;color:var(--gv-mut);align-items:center}
+.gv-day-aggr b{color:#fff;font-size:13px}
+.gv-day-aggr .ok{color:var(--gv-acid)}
+.gv-day-aggr .ok b{color:var(--gv-acid)}
+.gv-day-aggr .warn{color:#ffb020}
+.gv-day-aggr .warn b{color:#ffb020}
+.gv-day-aggr span{display:inline-flex;align-items:center;gap:5px}
+.gv-day-table{width:100%}
+.gv-day-table tbody tr:hover td{background:#16181c}
+.gv-day-warn{color:#ffb020;font-size:10px;font-weight:800;letter-spacing:.08em}

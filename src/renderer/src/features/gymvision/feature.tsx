@@ -7,6 +7,7 @@ import {
   type Athlete, type SessionRow, type SessionDetail, type VbtSummary, type Keyframe, type PoseKeyframe,
 } from './api'
 import { Calendar } from './Calendar'
+import { DayFlow } from './DayFlow'
 import { EntryFlow } from './EntryFlow'
 import { SessionView } from './SessionView'
 import { KeyframeAnnotator } from './KeyframeAnnotator'
@@ -23,11 +24,16 @@ function GymVisionPage() {
   // flujo de entrada + vista de detalle
   const [entryDate, setEntryDate] = useState<string | null>(null)
   const [entryOpen, setEntryOpen] = useState(false)
+  const [dayOpen, setDayOpen] = useState<string | null>(null) // día con precarga Hevy
+  const [dayAutoResume, setDayAutoResume] = useState(false) // abierto desde el banner de pendientes
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   // re-calibración de una sesión existente desde su detalle
   const [readjust, setReadjust] = useState(false)
   const [reBusy, setReBusy] = useState(false)
   const [reError, setReError] = useState<string | null>(null)
+  // corrección de peso desde el detalle (drift vs Hevy o edición manual)
+  const [wEdit, setWEdit] = useState('')
+  const [wBusy, setWBusy] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -45,6 +51,18 @@ function GymVisionPage() {
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  // Guarda de proceso para la re-calibración (keyframes + re-análisis).
+  useEffect(() => {
+    if (reBusy) {
+      void gv.setBusy('Re-analizando una sesión con anclas manuales')
+      window.onbeforeunload = (e) => { e.preventDefault(); return '' }
+    } else {
+      void gv.setBusy(null)
+      window.onbeforeunload = null
+    }
+    return () => { window.onbeforeunload = null }
+  }, [reBusy])
 
   const active = athletes.find((x) => x.is_active) ?? null
 
@@ -73,9 +91,30 @@ function GymVisionPage() {
     if (r.ok && r.data) setDetail(r.data)
   }
 
+  const viewSessionById = async (id: number) => {
+    const r = await gv.session(id)
+    if (r.ok && r.data) setDetail(r.data)
+  }
+
   const closeDetail = () => {
     if (reBusy) return
-    setDetail(null); setReadjust(false); setReError(null)
+    setDetail(null); setReadjust(false); setReError(null); setWEdit('')
+  }
+
+  // Corrige el peso sin re-analizar (el server recalcula solo el 1RM).
+  const applyWeight = async (payload: { from_hevy: true } | { weight_kg: number }) => {
+    if (!detail || wBusy) return
+    setWBusy(true)
+    setReError(null)
+    const r = await gv.updateWeight(detail.id, payload)
+    setWBusy(false)
+    if (!r.ok || !r.data) {
+      setReError(r.error === 'offline' ? 'GymVision no responde.' : (r.error ?? 'No se pudo corregir el peso'))
+      return
+    }
+    setDetail(r.data)
+    setWEdit('')
+    void load()
   }
 
   // Re-analiza la sesión ABIERTA con las anotaciones manuales (keyframes) como
@@ -152,6 +191,12 @@ function GymVisionPage() {
     .map((r) => ({ ...r, pct: Math.round((r.count / zoneTotal) * 100) }))
   const bestPr = summary?.prs?.[0] ?? null
 
+  // Homologaciones a medias: sesiones con serie de Hevy pero 0 reps analizadas
+  // (la app se cerró a mitad del pipeline). Derivado del servidor — sobrevive
+  // reinicios de la ventana sin estado local.
+  const pending = sessions.filter((s) => s.hevy && s.summary.rep_count === 0)
+  const pendingDate = pending[0]?.date ?? null
+
   return (
     <div className="gv-root">
       <div className="gv-wrap">
@@ -190,6 +235,21 @@ function GymVisionPage() {
           </div>
         </header>
 
+        {/* homologación interrumpida → reanudar donde quedó */}
+        {pendingDate && (
+          <section className="gv-sec">
+            <div className="gv-resume gv-frame">
+              <div className="gv-resume-tx">
+                <b>Homologación pendiente</b>
+                <span>{pending.length} video(s) del {pendingDate} sin analizar — reanuda donde quedaste.</span>
+              </div>
+              <button className="gv-cta" onClick={() => { setDayAutoResume(true); setDayOpen(pendingDate) }}>
+                Reanudar
+              </button>
+            </div>
+          </section>
+        )}
+
         {/* calendario 30 días + nueva entrada */}
         <section className="gv-sec">
           <div className="gv-h2" style={{ alignItems: 'center' }}>
@@ -198,8 +258,7 @@ function GymVisionPage() {
           </div>
           <Calendar
             sessions={sessions}
-            onPickDay={(d) => openEntry(d)}
-            onPickSession={(s) => void viewSession(s)}
+            onPickDay={(d) => setDayOpen(d)}
           />
         </section>
 
@@ -316,6 +375,21 @@ function GymVisionPage() {
         </div>
       </div>
 
+      {/* overlay: día del calendario con las series de Hevy precargadas.
+          Se mantiene MONTADO aunque se abra un detalle encima (el detalle
+          renderiza después → queda arriba): así no se pierde el pipeline. */}
+      {dayOpen && !entryOpen && (
+        <DayFlow
+          date={dayOpen}
+          sessions={sessions.filter((s) => s.date === dayOpen)}
+          autoResume={dayAutoResume}
+          onClose={() => { setDayOpen(null); setDayAutoResume(false) }}
+          onOpenSession={(id) => void viewSessionById(id)}
+          onManualEntry={() => { const d = dayOpen; setDayOpen(null); setDayAutoResume(false); openEntry(d ?? undefined) }}
+          onComplete={() => void load()}
+        />
+      )}
+
       {/* overlay: flujo de nueva entrada */}
       {entryOpen && (
         <EntryFlow
@@ -348,10 +422,37 @@ function GymVisionPage() {
               ) : (
                 <>
                   <SessionView session={detail} />
-                  <div className="gv-actions" style={{ marginTop: 18, justifyContent: 'flex-start' }}>
+                  {reError && <div className="gv-err" style={{ marginTop: 14 }}>{reError}</div>}
+
+                  {/* peso corregido en Hevy después de registrar el video */}
+                  {detail.hevy?.weight_drift && (
+                    <div className="gv-resume" style={{ marginTop: 14 }}>
+                      <div className="gv-resume-tx">
+                        <b>Peso corregido en Hevy</b>
+                        <span>
+                          Hevy dice {Math.round(detail.hevy.weight_kg! * 2) / 2}kg, la sesión guarda{' '}
+                          {Math.round(detail.weight_kg * 2) / 2}kg — se recalcula el 1RM, sin re-analizar.
+                        </span>
+                      </div>
+                      <button className="gv-cta" disabled={wBusy}
+                        onClick={() => void applyWeight({ from_hevy: true })}>
+                        {wBusy ? '…' : 'Usar peso de Hevy'}
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="gv-actions" style={{ marginTop: 18, justifyContent: 'flex-start', alignItems: 'center', gap: 10 }}>
                     <button className="gv-btn" style={{ background: 'transparent', color: '#fff' }}
                       onClick={() => setReadjust(true)} disabled={!detail.first_frame_url}>
                       ✎ Anotar barra (keyframes)
+                    </button>
+                    <span style={{ flex: 1 }} />
+                    <input className="gv-input" inputMode="decimal" placeholder={`peso (${detail.weight_kg}kg)`}
+                      value={wEdit} onChange={(e) => setWEdit(e.target.value)}
+                      style={{ width: 130, minWidth: 0 }} />
+                    <button className="gv-btn" disabled={wBusy || !(Number(wEdit) > 0)}
+                      onClick={() => void applyWeight({ weight_kg: Number(wEdit) })}>
+                      corregir peso
                     </button>
                   </div>
                 </>

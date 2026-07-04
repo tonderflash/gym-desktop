@@ -29,7 +29,9 @@ export function EntryFlow({ prefillDate, onClose, onComplete }: {
   const [exercise, setExercise] = useState('')
   const [weight, setWeight] = useState('')
   const [date, setDate] = useState(prefillDate || todayStr())
-  const [pose, setPose] = useState('mediapipe')
+  // Solo barra por defecto: la pose glitchea con discos por oclusión y la
+  // velocidad (el dato VBT) sale del tracking del disco, no del cuerpo.
+  const [pose, setPose] = useState('')
   const [plate, setPlate] = useState('0.45')
   const [videoPath, setVideoPath] = useState('')
   const [videoName, setVideoName] = useState('')
@@ -47,6 +49,19 @@ export function EntryFlow({ prefillDate, onClose, onComplete }: {
       if (list.length) setExercise(list[0].slug)
     })
   }, [])
+
+  // Guarda de proceso: con análisis corriendo, el main confirma antes de
+  // cerrar la ventana y beforeunload bloquea recargas accidentales.
+  useEffect(() => {
+    if (step === 'processing') {
+      void gv.setBusy('Analizando un video (entrada manual)')
+      window.onbeforeunload = (e) => { e.preventDefault(); return '' }
+    } else {
+      void gv.setBusy(null)
+      window.onbeforeunload = null
+    }
+    return () => { window.onbeforeunload = null; void gv.setBusy(null) }
+  }, [step])
 
   // rotación de mensajes durante el procesamiento (puramente cosmético)
   useEffect(() => {
@@ -142,9 +157,9 @@ export function EntryFlow({ prefillDate, onClose, onComplete }: {
                 <div className="gv-field">
                   <span className="gv-flabel">Motor de pose</span>
                   <select className="gv-select" value={pose} onChange={(e) => setPose(e.target.value)}>
-                    <option value="mediapipe">MediaPipe</option>
-                    <option value="yolo">YOLOv8-Pose</option>
-                    <option value="">Sin pose (solo barra)</option>
+                    <option value="">Sin pose — solo barra (recomendado)</option>
+                    <option value="mediapipe">MediaPipe (experimental)</option>
+                    <option value="yolo">YOLOv8-Pose (experimental)</option>
                   </select>
                 </div>
                 <div className="gv-field">

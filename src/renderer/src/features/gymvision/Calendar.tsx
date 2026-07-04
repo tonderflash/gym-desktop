@@ -5,11 +5,11 @@ function ymd(d: Date): string {
 }
 
 /** Calendario rodante de 30 días tipo Hevy: marca los días con sesión. Click en
- *  día con datos → ver sesión; click en día vacío → nueva entrada con esa fecha. */
-export function Calendar({ sessions, onPickDay, onPickSession }: {
+ *  cualquier día → flujo de día (sesiones existentes + series de Hevy para
+ *  asignar videos). */
+export function Calendar({ sessions, onPickDay }: {
   sessions: SessionRow[]
   onPickDay: (date: string) => void
-  onPickSession: (s: SessionRow) => void
 }) {
   const byDate = new Map<string, SessionRow[]>()
   for (const s of sessions) {
@@ -43,7 +43,7 @@ export function Calendar({ sessions, onPickDay, onPickSession }: {
             key={d.date}
             className={`gv-cal-day${d.has.length ? ' has' : ''}${d.isToday ? ' today' : ''}`}
             style={{ animationDelay: `${d.idx * 14}ms` }}
-            onClick={() => (d.has.length ? onPickSession(d.has[0]) : onPickDay(d.date))}
+            onClick={() => onPickDay(d.date)}
             title={d.has.length
               ? `${d.has.length} sesión(es) · ${d.date}`
               : `Nueva entrada · ${d.date}`}
