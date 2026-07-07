@@ -1,7 +1,7 @@
 {
   "name": "gymbar-desktop",
   "productName": "GymBar",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Predicción de adherencia al gym — local-first, con integración Claude",
   "main": "./out/main/index.js",
   "author": "Israel García",
