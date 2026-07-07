@@ -28,7 +28,7 @@ export interface MeetConfig {
  *  default abajo, y la entrada + render en el renderer (WIDGET_CATALOG). */
 export const WIDGET_KEYS = [
   'meet', 'muscles', 'volume', 'prs', 'findings', 'riskBreakdown',
-  'consistency', 'total',
+  'consistency', 'total', 'vbtHomolog', 'vbtProfile',
 ] as const
 export type WidgetKey = (typeof WIDGET_KEYS)[number]
 
@@ -74,6 +74,8 @@ function defaults(): Settings {
     dashboardWidgets: {
       meet: true, muscles: true, volume: true, prs: true, findings: true, riskBreakdown: true,
       consistency: false, total: false,
+      // VBT en vivo desde el motor GymVision — visibles por defecto
+      vbtHomolog: true, vbtProfile: true,
     },
   }
 }

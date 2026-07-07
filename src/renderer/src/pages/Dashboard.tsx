@@ -10,6 +10,7 @@ import { BodyMap, heatColor } from '../components/features/BodyMap'
 import { MeetCard } from '../components/features/MeetCard'
 import { MeetEditor } from '../components/features/MeetEditor'
 import { WidgetShop, WIDGET_CATALOG } from '../components/features/WidgetShop'
+import { VbtHomologCard, VbtProfileCard } from '../components/features/VbtWidgets'
 import { useAppState } from '../hooks/useAppState'
 import { useToast } from '../components/ui/Toast'
 import { labelFor, INTENTION_OPTS } from '@shared/labels'
@@ -178,6 +179,7 @@ export function Dashboard({ onNavigate, openSkipSignal }: { onNavigate: (p: Page
   }
   const bothVolPrs = show('volume') && show('prs')
   const bothConsTotal = show('consistency') && show('total')
+  const bothVbt = show('vbtHomolog') && show('vbtProfile')
   // total = suma de e1RM actuales de los básicos con data (independiente del objetivo)
   const liftsWithData = ins.meet.lifts.filter((l) => l.currentLbs !== null)
   const totalNow = liftsWithData.reduce((a, l) => a + (l.currentLbs ?? 0), 0)
@@ -461,6 +463,23 @@ export function Dashboard({ onNavigate, openSkipSignal }: { onNavigate: (p: Page
             )}
           </Card>
         </div>
+
+        {(show('vbtHomolog') || show('vbtProfile')) && (
+          <div className={`grid gap-4 ${bothVbt ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            {show('vbtHomolog') && (
+              <Widget editMode={editMode} onHide={() => void setWidget('vbtHomolog', false)}>
+                <CardTitle>Homologación VBT — video vs Hevy</CardTitle>
+                <VbtHomologCard />
+              </Widget>
+            )}
+            {show('vbtProfile') && (
+              <Widget editMode={editMode} onHide={() => void setWidget('vbtProfile', false)}>
+                <CardTitle>Perfil carga-velocidad — Deadlift</CardTitle>
+                <VbtProfileCard />
+              </Widget>
+            )}
+          </div>
+        )}
 
         {show('findings') && (
           <Widget editMode={editMode} onHide={() => void setWidget('findings', false)}>

@@ -38,7 +38,23 @@ export async function exportSkill(): Promise<{ ok: boolean; path?: string; error
         `# Rutas locales de este usuario\n\n` +
         `- Carpeta de datos de GymBar: \`${dataDir()}\`\n` +
         `- Dataset diario: \`${join(dataDir(), 'daily_log.csv')}\`\n` +
-        `- Cache de workouts Hevy: \`${join(dataDir(), 'cache.json')}\`\n`,
+        `- Cache de workouts Hevy: \`${join(dataDir(), 'cache.json')}\`\n` +
+        `\n## Data VBT (análisis de video — velocidad de barra)\n\n` +
+        `La data del VBT vive SOLO en el motor GymVision (Django local); no hay\n` +
+        `copia en archivos. Consúmela en vivo por su API:\n\n` +
+        `- Base: \`http://127.0.0.1:8000/api\`\n` +
+        `- \`GET /api/sessions/\` — sesiones con métricas por serie y el enlace a la\n` +
+        `  serie de Hevy (\`hevy.rep_match\` = reps detectadas por visión vs\n` +
+        `  logueadas; \`hevy.weight_drift\` = peso desactualizado vs Hevy).\n` +
+        `- \`GET /api/sessions/<id>/\` — desglose rep a rep (velocidad media/pico,\n` +
+        `  pérdida %, zona, ángulos si los hay).\n` +
+        `- \`GET /api/vbt/summary/\` — tendencia de velocidad, zonas y PRs (1RM est.).\n` +
+        `- \`GET /api/hevy/day/<YYYY-MM-DD>/\` — lo entrenado ese día según Hevy con\n` +
+        `  cada serie enlazada (o no) a su video.\n\n` +
+        `Si el API no responde, pide al usuario arrancar el motor:\n` +
+        `\`cd ~/Developer/gymvision && python manage.py runserver\`\n` +
+        `Interpreta velocidades con el marco VBT del programa (intención máxima,\n` +
+        `perfil carga-velocidad propio, ~0.24 m/s ≈ 1RM en deadlift).\n`,
         'utf-8',
       ),
     )

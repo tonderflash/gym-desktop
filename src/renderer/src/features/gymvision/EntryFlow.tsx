@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Film, Upload, Cpu, Check } from 'lucide-react'
-import { gv, type Bbox, type Exercise, type SessionDetail } from './api'
+import { gv, humanError, type Bbox, type Exercise, type SessionDetail } from './api'
 import { SeedMarker } from './SeedMarker'
 import { SessionView } from './SessionView'
 
@@ -89,7 +89,7 @@ export function EntryFlow({ prefillDate, onClose, onComplete }: {
       video_path: videoPath, plate_diameter_m: Number(plate) || undefined,
     })
     setBusy(false)
-    if (!r.ok || !r.data) { setError(r.error === 'offline' ? 'GymVision no responde.' : (r.error ?? 'Error al crear')); return }
+    if (!r.ok || !r.data) { setError(humanError(r.error, 'Error al crear')); return }
     setSession(r.data)
     setStep('seed')
   }
@@ -97,11 +97,19 @@ export function EntryFlow({ prefillDate, onClose, onComplete }: {
   const process = async () => {
     if (!session) return
     setError(null)
-    if (seed) await gv.saveSeed(session.id, seed)
+    if (seed) {
+      // si el seed no se guardó, analizar sin él degrada el tracking en
+      // silencio — mejor frenar aquí y decirlo
+      const r = await gv.saveSeed(session.id, seed)
+      if (!r.ok) {
+        setError(`No se guardó la marca de la barra: ${humanError(r.error)}`)
+        return
+      }
+    }
     setStep('processing')
     const r = await gv.analyze(session.id)
     if (!r.ok || !r.data) {
-      setError(r.error === 'offline' ? 'El análisis tardó demasiado o el server cayó.' : (r.error ?? 'Análisis falló'))
+      setError(humanError(r.error, 'Análisis falló'))
       setStep('seed')
       return
     }

@@ -186,9 +186,11 @@ export function KeyframeAnnotator({ session, busy, error, onReanalyze, onCancel 
         </div>
       </div>
 
-      {/* lienzo de anotación */}
+      {/* lienzo de anotación — scrub fluido vía <video>, frame.jpg de respaldo */}
       <AnnotationCanvas
         imageUrl={frameUrl(frame)}
+        videoUrl={session.video_url}
+        fps={fps}
         frame={frame}
         bar={barForFrame(frame)}
         joints={jointsForFrame(frame)}

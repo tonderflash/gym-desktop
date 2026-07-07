@@ -35,9 +35,11 @@ async function call<T = unknown>(path: string, opts: CallOpts = {}): Promise<Api
       return { ok: false, status: res.status, error }
     }
     return { ok: true, data: data as T }
-  } catch {
-    // ECONNREFUSED / timeout → el server no está corriendo o tardó demasiado
-    return { ok: false, error: 'offline', status: 0 }
+  } catch (e) {
+    // Distinguir "no está corriendo" de "está corriendo pero tardó": el
+    // remedio del usuario es distinto (arrancar el server vs esperar/reintentar).
+    const timedOut = e instanceof DOMException && e.name === 'TimeoutError'
+    return { ok: false, error: timedOut ? 'timeout' : 'offline', status: 0 }
   }
 }
 

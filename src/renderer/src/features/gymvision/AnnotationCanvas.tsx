@@ -18,9 +18,16 @@ const rectFrom = (ax: number, ay: number, bx: number, by: number): DispBox => ({
 })
 
 /** Canvas de anotación: caja de la barra + puntos de articulación sobre un frame.
- *  Edita el label ACTIVO; los demás se muestran read-only. Coords del VIDEO. */
-export function AnnotationCanvas({ imageUrl, frame, bar, joints, active, jointColor, jointLabel, onBar, onJoint }: {
+ *  Edita el label ACTIVO; los demás se muestran read-only. Coords del VIDEO.
+ *
+ *  El frame se muestra con un <video> local seekeado — scrub instantáneo y
+ *  fluido (el JPEG por HTTP tardaba cientos de ms por frame y el arrastre se
+ *  congelaba). Si el códec no decodifica (p. ej. HEVC sin soporte), cae solo
+ *  al modo <img> con frame.jpg, como antes. */
+export function AnnotationCanvas({ imageUrl, videoUrl, fps = 30, frame, bar, joints, active, jointColor, jointLabel, onBar, onJoint }: {
   imageUrl: string
+  videoUrl?: string | null       // fuente para scrub fluido; ausente = solo JPEG
+  fps?: number
   frame: number
   bar: number[] | null
   joints: JointPt[]
@@ -31,33 +38,74 @@ export function AnnotationCanvas({ imageUrl, frame, bar, joints, active, jointCo
   onJoint: (joint: string, p: Pt | null) => void
 }) {
   const imgRef = useRef<HTMLImageElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
   const drag = useRef<Drag>(null)
   const barRef = useRef(bar)
   barRef.current = bar
   const [box, setBox] = useState<DispBox | null>(null)
   const [imgSrc, setImgSrc] = useState(imageUrl)
+  const [videoFailed, setVideoFailed] = useState(false)
   const [liveJoint, setLiveJoint] = useState<{ joint: string; x: number; y: number } | null>(null)
 
+  const videoMode = !!videoUrl && !videoFailed
+  // elemento visible actual (video o img) — toda la geometría se mide de aquí
+  const mediaEl = (): HTMLVideoElement | HTMLImageElement | null =>
+    videoMode ? videoRef.current : imgRef.current
+  const naturalW = (el: HTMLVideoElement | HTMLImageElement): number =>
+    el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth
+
   const scale = () => {
-    const el = imgRef.current
-    return el && el.clientWidth && el.naturalWidth ? el.naturalWidth / el.clientWidth : 1
+    const el = mediaEl()
+    return el && el.clientWidth && naturalW(el) ? naturalW(el) / el.clientWidth : 1
   }
   const toSrc = (p: Pt): Pt => { const s = scale(); return { x: Math.round(p.x * s), y: Math.round(p.y * s) } }
 
   const applyBar = useCallback(() => {
     const b = barRef.current
-    const el = imgRef.current
-    if (b && b.length === 4 && el?.clientWidth && el.naturalWidth) {
+    const el = mediaEl()
+    if (b && b.length === 4 && el?.clientWidth && naturalW(el)) {
       const s = scale()
       setBox({ x: b[0] / s, y: b[1] / s, w: b[2] / s, h: b[3] / s })
     } else setBox(null)
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoMode])
 
   useEffect(() => { setImgSrc((prev) => (imageUrl && imageUrl !== prev ? imageUrl : prev)) }, [imageUrl])
   useEffect(() => { applyBar() }, [frame, bar, applyBar])
 
+  // ── seek fluido: latest-wins ──────────────────────────────────────────
+  // Si el <video> está a mitad de un seek, los frames nuevos solo actualizan
+  // el objetivo; al llegar 'seeked' se aplica el último pedido. El arrastre
+  // del scrubber nunca encola trabajo ni se congela.
+  const seekTarget = useRef<number | null>(null)
+  const seeking = useRef(false)
+  useEffect(() => {
+    if (!videoMode) return
+    const v = videoRef.current
+    if (!v || v.readyState === 0) return
+    const t = (frame + 0.5) / fps
+    if (seeking.current) {
+      seekTarget.current = t
+    } else {
+      seeking.current = true
+      v.currentTime = t
+    }
+  }, [frame, fps, videoMode])
+
+  const onSeeked = (): void => {
+    const v = videoRef.current
+    if (!v) return
+    const pending = seekTarget.current
+    seekTarget.current = null
+    if (pending !== null && Math.abs(v.currentTime - pending) > 1e-4) {
+      v.currentTime = pending // aplica el último frame pedido durante el seek
+    } else {
+      seeking.current = false
+    }
+  }
+
   const pos = (e: React.MouseEvent) => {
-    const r = imgRef.current!.getBoundingClientRect()
+    const r = mediaEl()!.getBoundingClientRect()
     return { x: clamp(e.clientX - r.left, 0, r.width), y: clamp(e.clientY - r.top, 0, r.height) }
   }
 
@@ -105,7 +153,7 @@ export function AnnotationCanvas({ imageUrl, frame, bar, joints, active, jointCo
     if (!drag.current) return
     const p = pos(e)
     const d = drag.current
-    const el = imgRef.current!
+    const el = mediaEl()!
     if (d.kind === 'draw') setBox(rectFrom(d.ox, d.oy, p.x, p.y))
     else if (d.kind === 'resize') setBox(rectFrom(d.fx, d.fy, p.x, p.y))
     else if (d.kind === 'move' && box) {
@@ -160,8 +208,28 @@ export function AnnotationCanvas({ imageUrl, frame, bar, joints, active, jointCo
     <div>
       <div className="gv-seed-wrap" style={{ position: 'relative', userSelect: 'none', cursor: 'crosshair' }}
         onMouseDown={onWrapDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}>
-        <img ref={imgRef} className="gv-seed-img" src={imgSrc} alt="frame" draggable={false}
-          decoding="sync" onLoad={applyBar} style={{ display: 'block', width: '100%' }} />
+        {videoMode ? (
+          <video
+            ref={videoRef}
+            className="gv-seed-img"
+            src={videoUrl!}
+            muted
+            playsInline
+            preload="auto"
+            onLoadedMetadata={() => {
+              // posiciona el primer frame pedido y recalibra la caja
+              const v = videoRef.current
+              if (v) { seeking.current = true; v.currentTime = (frame + 0.5) / fps }
+              applyBar()
+            }}
+            onSeeked={onSeeked}
+            onError={() => setVideoFailed(true)} // códec no soportado → JPEG
+            style={{ display: 'block', width: '100%' }}
+          />
+        ) : (
+          <img ref={imgRef} className="gv-seed-img" src={imgSrc} alt="frame" draggable={false}
+            decoding="sync" onLoad={applyBar} style={{ display: 'block', width: '100%' }} />
+        )}
 
         {/* caja de la barra */}
         {box && (

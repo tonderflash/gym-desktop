@@ -3,7 +3,7 @@ import { Gauge, Plus } from 'lucide-react'
 import type { FeatureDescriptor } from '../types'
 import './gymvision.css'
 import {
-  gv, ZONE_LABEL, ZONE_ORDER,
+  gv, humanError, ZONE_LABEL, ZONE_ORDER,
   type Athlete, type SessionRow, type SessionDetail, type VbtSummary, type Keyframe, type PoseKeyframe,
 } from './api'
 import { Calendar } from './Calendar'
@@ -109,7 +109,7 @@ function GymVisionPage() {
     const r = await gv.updateWeight(detail.id, payload)
     setWBusy(false)
     if (!r.ok || !r.data) {
-      setReError(r.error === 'offline' ? 'GymVision no responde.' : (r.error ?? 'No se pudo corregir el peso'))
+      setReError(humanError(r.error, 'No se pudo corregir el peso'))
       return
     }
     setDetail(r.data)
@@ -126,12 +126,12 @@ function GymVisionPage() {
     try {
       const saved = await gv.saveKeyframes(detail.id, bar, pose)
       if (!saved.ok) {
-        setReError(saved.error === 'offline' ? 'No se pudieron guardar las anclas.' : (saved.error ?? 'Error al guardar'))
+        setReError(humanError(saved.error, 'Error al guardar las anclas'))
         return
       }
       const r = await gv.analyze(detail.id)
       if (!r.ok || !r.data) {
-        setReError(r.error === 'offline' ? 'El análisis tardó demasiado o el server cayó.' : (r.error ?? 'Análisis falló'))
+        setReError(humanError(r.error, 'Análisis falló'))
         return
       }
       setDetail(r.data); setReadjust(false)
@@ -402,10 +402,10 @@ function GymVisionPage() {
       {/* overlay: detalle de sesión (preview + desglose + re-calibración) */}
       {detail && (
         <div className="gv-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) closeDetail() }}>
-          <div className="gv-sheet" role="dialog" aria-modal="true">
+          <div className="gv-sheet gv-sheet-wide" role="dialog" aria-modal="true">
             <div className="gv-sheet-head">
               <b>
-                {detail.exercise} · {detail.date} · {detail.weight_kg}kg
+                {detail.exercise} · {detail.date} · {Math.round(detail.weight_kg * 2) / 2}kg
                 {readjust && ' · re-ajustar barra'}
               </b>
               <button className="gv-close" onClick={closeDetail} aria-label="cerrar">×</button>
@@ -421,7 +421,23 @@ function GymVisionPage() {
                 />
               ) : (
                 <>
-                  <SessionView session={detail} />
+                  <SessionView
+                    session={detail}
+                    // mejor PICO histórico del MISMO ejercicio (excluyendo esta
+                    // sesión) — base correcta para el velocímetro en vivo, que
+                    // también lee velocidad instantánea. Contra la media
+                    // (best_velocity) la aguja pegaba al tope en cada rep: un
+                    // pico dentro de la rep es sistemáticamente más alto que
+                    // cualquier promedio.
+                    historicalMax={(() => {
+                      const others = sessions.filter(
+                        (x) => x.exercise_slug === detail.exercise_slug && x.id !== detail.id
+                          && x.summary.best_velocity_peak != null)
+                      return others.length
+                        ? Math.max(...others.map((x) => x.summary.best_velocity_peak!))
+                        : null
+                    })()}
+                  />
                   {reError && <div className="gv-err" style={{ marginTop: 14 }}>{reError}</div>}
 
                   {/* peso corregido en Hevy después de registrar el video */}

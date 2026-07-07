@@ -352,3 +352,76 @@
 .gv-day-table{width:100%}
 .gv-day-table tbody tr:hover td{background:#16181c}
 .gv-day-warn{color:#ffb020;font-size:10px;font-weight:800;letter-spacing:.08em}
+
+/* ── detalle grande: sheet ancho + video protagonista ─────────────────── */
+.gv-sheet-wide{width:min(1180px,96vw)}
+.gv-sheet-wide .gv-detail{grid-template-columns:1.35fr 1fr}
+.gv-sheet-wide .gv-video{width:auto;max-width:100%;max-height:72vh;margin:0 auto}
+
+/* ── telemetría en vivo bajo el video (reps + velocímetro) ────────────── */
+.gv-rp{display:flex;gap:18px;align-items:stretch;margin-top:12px;padding:12px 14px;
+  border:4px solid #000;background:#101216;box-shadow:6px 6px 0 #000}
+.gv-rp-reps{display:flex;flex-direction:column;justify-content:center;min-width:96px;
+  border-right:3px solid #2a2e34;padding-right:16px}
+.gv-rp-big{font-size:34px;font-weight:800;line-height:1;color:#fff;letter-spacing:-.02em}
+.gv-rp-big i{font-style:normal;font-size:18px;color:var(--gv-mut)}
+.gv-rp-lbl{font-size:9px;letter-spacing:.18em;color:var(--gv-mut);margin-top:4px;text-transform:uppercase}
+.gv-rp.live .gv-rp-lbl{color:var(--gv-acid)}
+.gv-rp-meter-wrap{flex:1;display:flex;flex-direction:column;justify-content:center;gap:7px;min-width:0}
+.gv-rp-meter-head{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.14em;
+  color:var(--gv-mut);text-transform:uppercase}
+.gv-rp-limit{color:#ffb020}
+
+.gv-rp-meter{position:relative;height:22px;background:#0a0b0d;border:3px solid #2a2e34;overflow:visible}
+.gv-rp-fill{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,var(--gv-acid),#9dff00);
+  transition:width 60ms linear;will-change:width}
+.gv-rp-tick{position:absolute;top:-6px;bottom:-6px;width:4px;background:#ffb020;
+  box-shadow:0 0 0 1px #000;transform:translateX(-50%);transition:left .4s cubic-bezier(.22,1,.36,1)}
+
+/* caliente ≥85%: el llenado vira a ámbar y pulsa */
+.gv-rp.hot .gv-rp-fill{background:linear-gradient(90deg,#ffb020,#ff7a00);
+  animation:gv-hotpulse 1s ease-in-out infinite}
+@keyframes gv-hotpulse{50%{filter:brightness(1.25)}}
+
+/* fuego ≥97%: rojo vivo, flicker de brasa + chispas subiendo en la punta */
+.gv-rp.fire .gv-rp-fill{background:linear-gradient(90deg,#ff7a00,#ff2d1a,#ff5500);
+  animation:gv-flame .12s steps(2) infinite;
+  box-shadow:0 0 14px #ff3b00,0 0 30px #ff550088}
+@keyframes gv-flame{0%{filter:brightness(1) saturate(1.2)}50%{filter:brightness(1.5) saturate(1.6)}
+  100%{filter:brightness(1.15) saturate(1.3)}}
+.gv-rp.fire .gv-rp-meter{border-color:#ff3b00}
+.gv-rp-sparks{position:absolute;top:0;bottom:0;width:0;pointer-events:none}
+.gv-rp-sparks span{position:absolute;bottom:2px;width:4px;height:4px;background:#ffd24e;
+  animation:gv-spark .7s ease-out infinite}
+.gv-rp-sparks span:nth-child(1){left:-6px;animation-delay:0s}
+.gv-rp-sparks span:nth-child(2){left:-1px;animation-delay:.22s;background:#ff7a00}
+.gv-rp-sparks span:nth-child(3){left:4px;animation-delay:.45s;background:#ff2d1a}
+@keyframes gv-spark{0%{transform:translateY(0) scale(1);opacity:1}
+  100%{transform:translateY(-26px) translateX(3px) scale(.4);opacity:0}}
+
+/* ROTO >102%: shake, grieta y esquirla volando — nuevo máximo histórico */
+.gv-rp.broken .gv-rp-meter{animation:gv-shatter .5s cubic-bezier(.36,.07,.19,.97) 1;
+  border-color:var(--gv-mag)}
+.gv-rp.broken .gv-rp-fill{
+  background:linear-gradient(90deg,#ff2d1a,var(--gv-mag));
+  animation:gv-flame .1s steps(2) infinite}
+@keyframes gv-shatter{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}
+  30%,50%,70%{transform:translateX(-7px)}40%,60%{transform:translateX(7px)}}
+.gv-rp-crack{position:absolute;inset:-6px -2px;pointer-events:none;
+  background:
+    linear-gradient(105deg,transparent 46%,#fff 46.5%,transparent 47.5%),
+    linear-gradient(75deg,transparent 63%,#fff 63.4%,transparent 64.4%),
+    linear-gradient(100deg,transparent 81%,#fff 81.5%,transparent 82.3%);
+  opacity:.85;animation:gv-crackin .25s steps(3) 1}
+@keyframes gv-crackin{0%{opacity:0;transform:scaleY(.2)}100%{opacity:.85;transform:scaleY(1)}}
+.gv-rp-shard{position:absolute;right:-18px;top:-4px;width:14px;height:14px;background:var(--gv-mag);
+  clip-path:polygon(0 0,100% 30%,40% 100%);animation:gv-shard .9s cubic-bezier(.2,.6,.4,1) forwards}
+@keyframes gv-shard{0%{transform:translate(0,0) rotate(0)}
+  100%{transform:translate(26px,-34px) rotate(160deg);opacity:0}}
+.gv-rp-record{font-size:11px;font-weight:800;letter-spacing:.12em;color:var(--gv-mag);
+  animation:gv-recordflash .6s steps(2) infinite}
+@keyframes gv-recordflash{50%{color:#fff}}
+
+.gv-rp-peak{position:absolute;top:-3px;bottom:-3px;width:3px;background:#fff;
+  box-shadow:0 0 6px #ffffffaa;transition:left 60ms linear}
+.gv-rp-vnum{font-variant-numeric:tabular-nums;color:#fff;font-size:12px}

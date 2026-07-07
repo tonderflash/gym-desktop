@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Cpu, Film, Play, Plus, RefreshCw, X } from 'lucide-react'
 import { SeedMarker } from './SeedMarker'
 import {
-  gv, type Exercise, type HevyDay, type HevyDayExercise, type HevyDaySet,
+  gv, humanError, type Exercise, type HevyDay, type HevyDayExercise, type HevyDaySet,
   type HevyLink, type SessionDetail, type SessionRow,
 } from './api'
 
@@ -99,7 +99,7 @@ export function DayFlow({ date, sessions, autoResume, onClose, onOpenSession, on
     setError(null)
     const r = await gv.hevyDay(date, refresh)
     if (!r.ok || !r.data) {
-      setError(r.error === 'offline' ? 'GymVision no responde.' : (r.error ?? 'Error al cargar el día'))
+      setError(humanError(r.error, 'Error al cargar el día'))
       setDay(null)
     } else {
       setDay(r.data)
@@ -111,7 +111,14 @@ export function DayFlow({ date, sessions, autoResume, onClose, onOpenSession, on
   }
 
   useEffect(() => { void load() }, [date]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { void gv.exercises().then((r) => setCatalog(r.data ?? [])) }, [])
+  useEffect(() => {
+    void gv.exercises().then((r) => {
+      setCatalog(r.data ?? [])
+      // sin catálogo, los ejercicios "sin mapear" no se pueden asignar y el
+      // select sale vacío sin explicación — que no pase desapercibido
+      if (!r.ok) setError((prev) => prev ?? 'No pude cargar el catálogo de ejercicios del motor.')
+    })
+  }, [])
 
   // ── guarda de proceso ─────────────────────────────────────────────────
   // Mientras hay pipeline vivo (subiendo, marcando o analizando): el main pide
@@ -208,7 +215,7 @@ export function DayFlow({ date, sessions, autoResume, onClose, onOpenSession, on
     for (const d of drifted) {
       const r = await gv.updateWeight(d.sessionId, { from_hevy: true })
       if (!r.ok) {
-        setError(`Set ${d.setNumber}: ${r.error === 'offline' ? 'GymVision no responde' : r.error ?? 'no se pudo corregir'}`)
+        setError(`Set ${d.setNumber}: ${humanError(r.error, 'no se pudo corregir')}`)
         break
       }
     }
@@ -264,7 +271,11 @@ export function DayFlow({ date, sessions, autoResume, onClose, onOpenSession, on
 
   const pickVideoFor = async (set: HevyDaySet) => {
     const r = await gv.pickVideo()
-    if (!r.ok || !r.data) return
+    if (!r.ok || !r.data) {
+      // cancelar el diálogo es normal; cualquier otra cosa se dice
+      if (r.error && r.error !== 'cancelado') setError(humanError(r.error))
+      return
+    }
     setAssignments((prev) => {
       const next = new Map(prev)
       next.set(set.id, { set, videoPath: r.data!.path, videoName: r.data!.name })
@@ -302,7 +313,7 @@ export function DayFlow({ date, sessions, autoResume, onClose, onOpenSession, on
         ...(s.weight_kg == null ? { weight_kg: 0 } : {}),
       })
       if (!r.ok || !r.data) {
-        setError(`Set ${s.number}: ${r.error === 'offline' ? 'GymVision no responde' : r.error ?? 'error al crear'}`)
+        setError(`Set ${s.number}: ${humanError(r.error, 'error al crear')}`)
         setBusy(false)
         // deja los ya creados en el pipeline para no perderlos
         if (created.length) { setItems(created); setSeedIdx(0); setPhase('seed') }
@@ -321,7 +332,15 @@ export function DayFlow({ date, sessions, autoResume, onClose, onOpenSession, on
 
   const nextSeed = async () => {
     const item = items[seedIdx]
-    if (item && seedBox) await gv.saveSeed(item.session.id, seedBox)
+    if (item && seedBox) {
+      // sin frenar aquí, un seed no guardado degrada el tracking en silencio
+      const r = await gv.saveSeed(item.session.id, seedBox)
+      if (!r.ok) {
+        setError(`Set ${item.set.number}: no se guardó la marca de la barra — ${humanError(r.error)}`)
+        return
+      }
+      setError(null)
+    }
     setSeedBox(null)
     if (seedIdx + 1 < items.length) {
       setSeedIdx(seedIdx + 1)
@@ -342,7 +361,7 @@ export function DayFlow({ date, sessions, autoResume, onClose, onOpenSession, on
       setItems((prev) => prev.map((it, j) => {
         if (j !== i) return it
         if (!r.ok || !r.data) {
-          return { ...it, status: 'error', error: r.error === 'offline' ? 'análisis colgado o server caído' : r.error }
+          return { ...it, status: 'error', error: humanError(r.error, 'análisis falló') }
         }
         const detected = r.data.hevy?.rep_match?.detected ?? r.data.reps.length
         const ok = r.data.hevy?.rep_match?.ok ?? false

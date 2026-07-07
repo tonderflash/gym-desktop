@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, nativeImage, shell, session } from 'electro
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { getBusyReason, setBusy } from './busy'
+import { installCrashGuard } from './crash-guard'
 import { ensureDirs, isDev, paths } from './env'
 import { loadSettings } from './settings'
 import { autoMigrateOnFirstRun } from './migrate'
@@ -150,6 +151,7 @@ if (!gotLock) {
 
     setDockIconInDev()
     ensureDirs()
+    installCrashGuard() // después de ensureDirs para que errors.log tenga carpeta
     loadSettings()
     autoMigrateOnFirstRun()
 

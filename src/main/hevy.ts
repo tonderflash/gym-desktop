@@ -2,6 +2,7 @@
 import { getHevyKey } from './settings'
 import { writeCache, readCache, type HevyWorkout } from './store'
 import { logicalDateFromDt, localIso } from './logic'
+import { logError } from './crash-guard'
 
 const BASE = 'https://api.hevyapp.com/v1'
 const PAGE_SIZE = 10
@@ -29,7 +30,13 @@ export async function fetchWorkouts(): Promise<HevyWorkout[]> {
     all.push(...batch)
     if (batch.length < PAGE_SIZE) break
   }
-  writeCache({ fetched_at: localIso(), workouts: all })
+  try {
+    writeCache({ fetched_at: localIso(), workouts: all })
+  } catch (e) {
+    // el fetch YA salió bien: un disco lleno no debe convertirlo en fallo —
+    // se devuelve la data fresca y el problema queda registrado
+    logError('hevy:writeCache', e)
+  }
   return all
 }
 

@@ -3,6 +3,7 @@ import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import {
   Trophy, PersonStanding, BarChart3, Medal, Sparkles, Table2, CalendarCheck, Sigma,
+  ScanLine, Gauge,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -66,6 +67,18 @@ export const WIDGET_CATALOG: WidgetTemplate[] = [
     label: 'Total powerlifting',
     desc: 'Tu total actual (squat + bench + deadlift en e1RM) en grande, con el desglose por básico.',
     icon: Sigma,
+  },
+  {
+    key: 'vbtHomolog',
+    label: 'Homologación VBT',
+    desc: 'Tus videos vs lo logueado en Hevy, en vivo del motor GymVision: series verificadas por visión, pendientes de analizar y pesos desactualizados.',
+    icon: ScanLine,
+  },
+  {
+    key: 'vbtProfile',
+    label: 'Perfil carga-velocidad',
+    desc: 'Tu recta personal del deadlift (velocidad de la rep más rápida por carga): 1RM estimado en el cruce de 0.24 m/s y rango de carga para los triples pesados.',
+    icon: Gauge,
   },
 ]
 

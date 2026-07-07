@@ -19,7 +19,8 @@ export interface Athlete {
 
 export interface SessionSummary {
   rep_count: number
-  best_velocity: number | null
+  best_velocity: number | null       // máx de las medias por rep
+  best_velocity_peak: number | null  // máx de los picos instantáneos — base correcta para comparar contra el velocímetro en vivo (también instantáneo)
   mean_velocity: number | null
   velocity_loss_pct: number | null
   best_1rm: number | null
@@ -149,6 +150,9 @@ export interface Rep {
   training_zone: string
   estimated_1rm: number | null
   tracking_confidence: number | null
+  // ventana concéntrica en frames del video — para overlays sincronizados
+  frame_start: number | null
+  frame_end: number | null
 }
 
 export type Bbox = { x: number; y: number; w: number; h: number }
@@ -174,6 +178,9 @@ export interface SessionDetail extends SessionRow {
   frame_count: number | null
   analyzed: boolean
   plate_diameter_m: number
+  // rapidez instantánea del plato por frame (m/s, EMA — la curva del HUD);
+  // alimenta el velocímetro en vivo sincronizado con el playback
+  velocity_series: number[]
 }
 
 export interface NewSession {
@@ -212,9 +219,20 @@ async function directFetch<T>(
       return { ok: false, status: res.status, error }
     }
     return { ok: true, data: data as T }
-  } catch {
-    return { ok: false, error: 'offline', status: 0 }
+  } catch (e) {
+    const timedOut = e instanceof DOMException && e.name === 'TimeoutError'
+    return { ok: false, error: timedOut ? 'timeout' : 'offline', status: 0 }
   }
+}
+
+/** Mensaje humano para los errores de transporte del cliente.
+ *  'offline'/'timeout' son los códigos que emite la capa de fetch (main y
+ *  directo); cualquier otro string ya viene legible del API de Django. */
+export function humanError(error: string | undefined, fallback = 'Error inesperado'): string {
+  if (error === 'offline') return 'GymVision no responde — ¿está corriendo el motor?'
+  if (error === 'timeout') return 'El motor tardó demasiado en responder (sigue vivo: reintenta).'
+  if (error === 'unavailable') return 'Extensión no disponible — reinicia la app (Cmd+Q).'
+  return error || fallback
 }
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<ApiResult<T>> {
