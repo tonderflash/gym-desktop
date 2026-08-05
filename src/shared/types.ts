@@ -91,6 +91,41 @@ export interface Insights {
   findings: Finding[]
 }
 
+// ── Agente (insights que Claude escribe en /loop sobre la data local) ───────
+// La app solo LEE agent_insights.json; el loop del agente es quien lo escribe,
+// eligiendo cada ciclo si busca correlaciones, tendencias o research externo.
+
+export type AgentCategory = 'correlation' | 'trend' | 'research' | 'data'
+
+export interface AgentInsight {
+  id: string
+  createdAt: string
+  category: AgentCategory
+  title: string
+  body: string
+  /** 0-100; el card ordena descendente (lo más importante primero) */
+  priority: number
+  confidence: 'low' | 'med' | 'high'
+  tone: 'ok' | 'warn' | 'info'
+  /** los números/fechas que sostienen el insight */
+  evidence?: string
+  /** siguiente paso accionable, si aplica */
+  action?: string
+  /** URL de la fuente (solo research externo) */
+  source?: string
+}
+
+export interface AgentReport {
+  version: number
+  /** última vez que el loop escribió el archivo */
+  updatedAt: string | null
+  /** qué planea hacer el agente en el próximo ciclo (correlación/tendencia/research) */
+  nextAction: string | null
+  /** presente = el archivo existe y se pudo leer */
+  present: boolean
+  insights: AgentInsight[]
+}
+
 export interface AppState {
   version: string
   hevyConfigured: boolean
@@ -190,6 +225,8 @@ export interface ApiSurface {
   saveSkipReason(date: string, reason: string): Promise<{ ok: boolean }>
   resolveWent(date: string): Promise<{ ok: boolean }>
   getHistory(): Promise<Record<string, string>[]>
+  getAgentInsights(): Promise<AgentReport>
+  getAgentArchive(): Promise<AgentInsight[]>
   getSettings(): Promise<SettingsView>
   saveSettings(patch: SettingsPatch): Promise<SettingsView>
   testHevyKey(key: string): Promise<{ ok: boolean; error?: string }>

@@ -1,7 +1,9 @@
-// Port fiel de la lógica de gym_bar.py: día lógico, rotación, riesgo heuristic_v2.
+// Día lógico (cutoff 4am), rotación y riesgo heuristic_v3. El día lógico y la
+// rotación siguen siendo port fiel de gym_bar.py; el riesgo ya no (ver scoreRisk).
 import {
   LOGICAL_DAY_CUTOFF_HOUR,
   TRAINING_ROTATION, SESSION_KEYWORDS, DOW_NAMES,
+  RISK_WEIGHTS, RISK_CHECKIN_WEIGHTS, RISK_CLAMP, LAPSE_FREE_DAYS, LAPSE_SPAN,
 } from '@shared/schema'
 import type { RiskFactor } from '@shared/types'
 import { loadSettings } from './settings'
@@ -129,91 +131,144 @@ export function checkinFeaturesFromRow(row: Record<string, string> | undefined |
   }
 }
 
+/** Entradas explícitas del modelo — sin `logicalToday()` ni settings adentro,
+ *  para que el scorer sea puro y testeable contra historial real. */
+export interface RiskInputs {
+  /** Fecha lógica ISO que se está puntuando. */
+  today: string
+  /** Fechas lógicas ISO de sesiones, DESC. Deben ser TODAS < today: el modelo
+   *  predice si entrenarás hoy, así que incluir hoy sería leakage. */
+  history: string[]
+  /** ¿`today` es día de descanso configurado? */
+  restDay: boolean
+  /** Largo del ciclo de rotación — normaliza la carga semanal. */
+  rotationLength: number
+  checkin: CheckinFeatures | null
+}
+
 /**
- * heuristic_v2 — riesgo de NO entrenar hoy (0.04–0.96) + desglose.
- * dates: fechas lógicas ISO de sesiones, ordenadas DESC (dates[0] = última).
- * Heurística ponderada, no modelo entrenado — señal direccional.
+ * heuristic_v3 — riesgo de NO entrenar hoy (0.04–0.96) + desglose.
+ *
+ * Suma en LOG-ODDS y cierra con una sigmoide, en vez de sumar probabilidades
+ * como v2. Eso importa por dos razones: los términos ya no pueden empujar el
+ * resultado fuera de [0,1] (v2 lo tapaba con un clamp que destruía la
+ * calibración en los extremos), y el efecto de cada factor pasa a ser
+ * multiplicativo sobre las odds, que es como se comportan realmente.
+ *
+ * Los `contrib` del desglose están en log-odds: el signo se lee igual que antes
+ * (+ sube el riesgo, − lo baja) pero la magnitud ya no es "puntos de
+ * probabilidad". El `note` de cada fila lo explicita.
+ *
+ * Ver RISK_WEIGHTS en shared/schema.ts para el porqué de cada peso.
  */
-export function calculateRisk(dates: string[], checkin: CheckinFeatures | null = null): {
-  risk: number
-  factors: RiskFactor[]
-} {
-  const today = logicalToday()
+export function scoreRisk(inputs: RiskInputs): { risk: number; factors: RiskFactor[] } {
+  const { today, history, restDay, rotationLength, checkin } = inputs
   const factors: RiskFactor[] = []
 
-  if (dates.length === 0) {
+  if (history.length === 0) {
     return {
       risk: 0.5,
-      factors: [{ name: 'sin datos', value: 'N/A', contrib: 0.5, note: 'sin historial → asumimos 50%' }],
+      factors: [{ name: 'sin datos', value: 'N/A', contrib: 0, note: 'sin historial → asumimos 50%' }],
     }
   }
 
-  const daysSince = daysBetween(today, dates[0])
-  const gapRisk = sigmoid((daysSince - 3) * 0.85)
-  const gapContrib = gapRisk * 0.65
+  const W = RISK_WEIGHTS
+  let z = W.BASE
   factors.push({
-    name: 'gap', value: `${daysSince}d sin ir`, contrib: gapContrib,
-    note: `sigmoid(${daysSince}-3)×0.85 × 65%`,
+    name: 'base', value: '—', contrib: W.BASE,
+    note: 'intercepto del modelo (día laboral, semana en 0)',
   })
 
-  const last5 = dates.filter((d) => daysBetween(today, d) <= 5)
-  const postCluster = last5.length >= 3 && daysSince >= 2 ? 0.2 : 0
+  // Día de descanso: el predictor más fuerte del historial y el que v2 ignoraba.
+  const restContrib = restDay ? W.REST_DAY : 0
+  z += restContrib
   factors.push({
-    name: 'cluster', value: `${last5.length} en 5d`, contrib: postCluster,
-    note: postCluster ? 'ráfaga + pausa ≥2d → +0.20' : 'sin patrón ráfaga/pausa',
+    name: 'descanso', value: restDay ? DOW_NAMES[weekdayOf(today)] : 'no',
+    contrib: restContrib,
+    note: restDay ? 'día de descanso configurado' : 'hoy no es día de descanso',
   })
 
-  const todayWd = weekdayOf(today)
-  const monday = addDays(today, -todayWd)
-  const sessionsThisWeek = dates.filter((d) => d >= monday && d < today).length
-  const busyWeek = sessionsThisWeek >= 3 && daysSince >= 2 ? 0.08 : 0
+  // Cuota semanal ya cumplida — entre más sesiones lleves, más probable parar.
+  const monday = addDays(today, -weekdayOf(today))
+  const sessionsThisWeek = history.filter((d) => d >= monday && d < today).length
+  const weekContrib = W.WEEK_LOAD * (sessionsThisWeek / rotationLength)
+  z += weekContrib
   factors.push({
-    name: 'semana', value: `${sessionsThisWeek} sesiones`, contrib: busyWeek,
-    note: busyWeek ? 'ya 3+ esta semana → descanso espontáneo' : 'no aplica',
+    name: 'semana', value: `${sessionsThisWeek}/${rotationLength}`, contrib: weekContrib,
+    note: `carga semanal ya cumplida × ${W.WEEK_LOAD}`,
   })
 
-  const dowAdj: Record<number, number> = { 0: 0.02, 1: 0.02, 2: 0.08, 3: 0.13, 4: 0.03, 5: 0.1, 6: 0.06 }
-  const dowContrib = (dowAdj[todayWd] ?? 0.05) * 0.5
+  // Abandono: el gap SOLO cuenta pasada la ventana de recuperación. Antes de
+  // LAPSE_FREE_DAYS un gap corto es la rotación, no una señal de riesgo.
+  const daysSince = daysBetween(today, history[0])
+  const lapse = Math.min(Math.max(daysSince - LAPSE_FREE_DAYS, 0), LAPSE_SPAN) / LAPSE_SPAN
+  const lapseContrib = W.LAPSE * lapse
+  z += lapseContrib
   factors.push({
-    name: 'día', value: DOW_NAMES[todayWd], contrib: dowContrib,
-    note: 'ajuste histórico del día × 50%',
+    name: 'abandono', value: `${daysSince}d sin ir`, contrib: lapseContrib,
+    note: lapse > 0
+      ? `${daysSince}d supera los ${LAPSE_FREE_DAYS}d de recuperación`
+      : `${daysSince}d entra en recuperación normal (≤${LAPSE_FREE_DAYS}d)`,
   })
-
-  let raw = gapContrib + postCluster + busyWeek + dowContrib
 
   if (checkin) {
-    const intentMap: Record<string, number> = { yes_now: -0.25, probably: -0.08, unsure: 0.12, no: 0.4 }
-    const ia = intentMap[checkin.intention ?? ''] ?? 0
+    const C = RISK_CHECKIN_WEIGHTS
+    const ia = C.INTENTION[checkin.intention ?? ''] ?? 0
+    z += ia
     factors.push({
       name: 'intención', value: checkin.intention ?? '—', contrib: ia,
-      note: 'declarada en check-in (predictor #1)',
+      note: 'declarada en check-in (prior, no ajustado)',
     })
 
     let ea = 0
-    if (checkin.energy !== null) ea = checkin.energy <= 2 ? 0.08 : checkin.energy >= 4 ? -0.06 : 0
+    if (checkin.energy !== null) {
+      ea = checkin.energy <= 2 ? C.ENERGY_LOW : checkin.energy >= 4 ? C.ENERGY_HIGH : 0
+    }
+    z += ea
     factors.push({
       name: 'energía', value: checkin.energy !== null ? `${checkin.energy}/5` : '—', contrib: ea,
       note: 'baja drena adherencia; alta protege',
     })
 
     let sa = 0
-    if (checkin.sleep_hours !== null) sa = checkin.sleep_hours < 6 ? 0.07 : checkin.sleep_hours >= 8 ? -0.03 : 0
+    if (checkin.sleep_hours !== null) {
+      sa = checkin.sleep_hours < 6 ? C.SLEEP_SHORT : checkin.sleep_hours >= 8 ? C.SLEEP_LONG : 0
+    }
+    z += sa
     factors.push({
       name: 'sueño', value: checkin.sleep_hours !== null ? `${checkin.sleep_hours}h` : '—', contrib: sa,
       note: '<6h castiga, ≥8h protege',
     })
 
     let fa = 0
-    if (checkin.factor_sick || checkin.factor_injury) fa += 0.12
-    if (checkin.factor_alcohol || checkin.factor_late_night) fa += 0.05
+    if (checkin.factor_sick || checkin.factor_injury) fa += C.SICK_OR_INJURY
+    if (checkin.factor_alcohol || checkin.factor_late_night) fa += C.ALCOHOL_OR_LATE
+    z += fa
     factors.push({
       name: 'factores', value: 'ayer', contrib: fa,
-      note: 'enfermo/lesión +0.12 · alcohol/trasnoche +0.05',
+      note: `enfermo/lesión +${C.SICK_OR_INJURY} · alcohol/trasnoche +${C.ALCOHOL_OR_LATE}`,
     })
-
-    raw += ia + ea + sa + fa
   }
 
-  const final = Math.round(Math.max(0.04, Math.min(0.96, raw)) * 1000) / 1000
-  return { risk: final, factors }
+  const p = Math.max(RISK_CLAMP.MIN, Math.min(RISK_CLAMP.MAX, sigmoid(z)))
+  return { risk: Math.round(p * 1000) / 1000, factors }
+}
+
+/**
+ * Wrapper para el runtime: resuelve hoy, settings y rotación, y descarta del
+ * historial cualquier fecha ≥ hoy — si Hevy ya sincronizó la sesión de hoy,
+ * incluirla haría que el modelo "prediga" con la respuesta puesta.
+ */
+export function calculateRisk(dates: string[], checkin: CheckinFeatures | null = null): {
+  risk: number
+  factors: RiskFactor[]
+} {
+  const today = logicalToday()
+  return scoreRisk({
+    today,
+    history: dates.filter((d) => d < today),
+    restDay: isRestDay(today),
+    rotationLength: TRAINING_ROTATION.length,
+    checkin,
+  })
 }

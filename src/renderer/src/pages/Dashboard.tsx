@@ -11,6 +11,7 @@ import { MeetCard } from '../components/features/MeetCard'
 import { MeetEditor } from '../components/features/MeetEditor'
 import { WidgetShop, WIDGET_CATALOG } from '../components/features/WidgetShop'
 import { VbtHomologCard, VbtProfileCard } from '../components/features/VbtWidgets'
+import { AgentCard } from '../components/features/AgentCard'
 import { useAppState } from '../hooks/useAppState'
 import { useToast } from '../components/ui/Toast'
 import { labelFor, INTENTION_OPTS } from '@shared/labels'
@@ -479,6 +480,12 @@ export function Dashboard({ onNavigate, openSkipSignal }: { onNavigate: (p: Page
               </Widget>
             )}
           </div>
+        )}
+
+        {show('agent') && (
+          <Widget editMode={editMode} onHide={() => void setWidget('agent', false)}>
+            <AgentCard reloadKey={focusTick} />
+          </Widget>
         )}
 
         {show('findings') && (

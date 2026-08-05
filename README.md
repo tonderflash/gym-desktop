@@ -52,7 +52,7 @@ workflow. Sin esto los amigos verán el warning de Gatekeeper al instalar
 ```
 src/main/      proceso principal (Node): datos, Hevy, riesgo, scheduler, updater
   store.ts       CSV esquema 3.2 (compatible 1:1 con gym-bar Python) + backups
-  logic.ts       día lógico (cutoff 4am), rotación, heuristic_v2
+  logic.ts       día lógico (cutoff 4am), rotación, heuristic_v3
   pipeline.ts    fetch → resolución retroactiva → backfill → freeze riesgo/clima
   settings.ts    config + API key cifrada (safeStorage)
   updater.ts     electron-updater + fallback manual sin firma

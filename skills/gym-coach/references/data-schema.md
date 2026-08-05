@@ -50,7 +50,7 @@ día anterior). Códigos en inglés; UI en español.
 |---|---|
 | `predicted_risk` | Riesgo BASE de faltar (0-1), congelado ANTES del check-in. Nunca se recalcula. |
 | `predicted_risk_post` | Riesgo recalculado al guardar el check-in (1ra vez). |
-| `risk_model_version` | `heuristic_v1/v2` — para comparar modelos entre sí. |
+| `risk_model_version` | `heuristic_v1/v2/v3` — para comparar modelos entre sí. |
 
 ## Otros archivos del data folder
 

@@ -8,6 +8,7 @@ import {
 } from './pipeline'
 import { calculateRisk, checkinFeaturesFromRow, logicalToday, localIso } from './logic'
 import { exportSkill } from './skill-export'
+import { readAgentReport, readAgentArchive } from './agent'
 import { importLegacy, legacyAvailable } from './migrate'
 import { checkForUpdates, installUpdate } from './updater'
 import { RISK_MODEL_NAME } from '@shared/schema'
@@ -237,6 +238,10 @@ export function registerIpc(window: BrowserWindow): void {
     const log = readLog()
     return [...log.values()].sort((a, b) => b.date.localeCompare(a.date))
   })
+
+  ipcMain.handle('agent:get', () => readAgentReport())
+
+  ipcMain.handle('agent:archive', () => readAgentArchive())
 
   ipcMain.handle('settings:get', () => settingsView())
 

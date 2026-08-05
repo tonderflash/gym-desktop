@@ -3,7 +3,7 @@ import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import {
   Trophy, PersonStanding, BarChart3, Medal, Sparkles, Table2, CalendarCheck, Sigma,
-  ScanLine, Gauge,
+  ScanLine, Gauge, Bot,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -20,6 +20,12 @@ export interface WidgetTemplate {
 }
 
 export const WIDGET_CATALOG: WidgetTemplate[] = [
+  {
+    key: 'agent',
+    label: 'Agent',
+    desc: 'El agente lee toda tu data (check-in, Hevy, VBT, objetivo) en un loop y va escribiendo insights ordenados por importancia: correlaciones nuevas, tendencias y research externo. Siempre tiene algo que buscar.',
+    icon: Bot,
+  },
   {
     key: 'meet',
     label: 'Objetivo',

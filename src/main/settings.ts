@@ -27,6 +27,7 @@ export interface MeetConfig {
  *  Para publicar un template nuevo en la galería: añadir la key aquí, su
  *  default abajo, y la entrada + render en el renderer (WIDGET_CATALOG). */
 export const WIDGET_KEYS = [
+  'agent',
   'meet', 'muscles', 'volume', 'prs', 'findings', 'riskBreakdown',
   'consistency', 'total', 'vbtHomolog', 'vbtProfile',
 ] as const
@@ -72,6 +73,8 @@ function defaults(): Settings {
     },
     // los 6 originales activos; los templates nuevos se "instalan" en la galería
     dashboardWidgets: {
+      // el Agente arriba de todo: es el card que resume lo más importante
+      agent: true,
       meet: true, muscles: true, volume: true, prs: true, findings: true, riskBreakdown: true,
       consistency: false, total: false,
       // VBT en vivo desde el motor GymVision — visibles por defecto
