@@ -8,7 +8,7 @@ import { logicalToday, addDays, daysBetween, weekdayOf } from './logic'
 import {
   KG_TO_LBS, e1rmLbs, bestE1rm, workingSets, trendSlope, type DatedSet,
 } from './lifting'
-import { buildMuscles, buildReadiness } from './muscles'
+import { buildMuscles, buildReadiness, unmappedIn } from './muscles'
 import { buildStrength } from './strength'
 import { DOW_NAMES } from '@shared/schema'
 import type {
@@ -316,6 +316,7 @@ export function buildInsights(workouts: HevyWorkout[], log: Map<string, LogRow>)
   return {
     meet: buildMeet(sets),
     muscles,
+    unmapped: unmappedIn(sets),
     readiness: buildReadiness(muscles),
     strength: buildStrength(sets),
     volume,

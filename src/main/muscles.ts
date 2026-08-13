@@ -12,43 +12,75 @@
 import { logicalToday, addDays, daysBetween } from './logic'
 import { loadSettings } from './settings'
 import type { DatedSet } from './lifting'
-import type { MuscleInsight, MusclePriority, MuscleZone, ReadinessInsight } from '@shared/types'
+import type {
+  MuscleInsight, MusclePriority, MuscleZone, ReadinessInsight, UnmappedExercise,
+} from '@shared/types'
 
 // ── Reglas ejercicio → músculos ──────────────────────────────────────────
-// Primer match gana — el orden importa (leg curl antes que curl, romanian
-// antes que deadlift, lateral raise antes que row, etc.). El peso es la
-// implicación: 1 = motor principal, 0.5 = sinergista, 0.25 = estabilizador.
+// Primer match gana — el orden importa y es la fuente de casi todos los
+// errores de conteo. Reglas específicas ARRIBA de las genéricas: "wrist curl"
+// antes que "curl" (si no, el antebrazo cuenta como bíceps), "triceps dip"
+// antes que "dip" (si no, un fondo de tríceps cuenta como pecho), "leg curl"
+// antes que "curl", "lateral raise" antes que "row" (por el upright row).
+// El peso es la implicación: 1 = motor principal, 0.5 = sinergista,
+// 0.25 = estabilizador.
 const MUSCLE_RULES: [RegExp, [string, number][]][] = [
+  // pierna — cadena posterior primero (romanian antes que deadlift)
   [/leg curl|nordic|ham curl|glute ham raise/i, [['hamstrings', 1]]],
   [/romanian deadlift|rdl|good morning/i, [['hamstrings', 1], ['glutes', 0.5], ['erectors', 0.5]]],
   [/back extension|hyperextension|reverse hyper/i, [['erectors', 1], ['glutes', 0.5], ['hamstrings', 0.5]]],
   [/pull through/i, [['glutes', 1], ['hamstrings', 0.5]]],
   [/deadlift/i, [['glutes', 1], ['hamstrings', 1], ['erectors', 0.75], ['upper_back', 0.5], ['forearms', 0.5]]],
   [/leg extension|sissy squat/i, [['quads', 1]]],
-  [/leg press/i, [['quads', 1], ['glutes', 0.5], ['adductors', 0.25]]],
+  // pliométricos: cuentan como estímulo de pierna aunque la carga sea el cuerpo
+  [/leg press|jump/i, [['quads', 1], ['glutes', 0.5], ['adductors', 0.25]]],
   [/hip thrust|glute bridge|glute kickback|hip abduction|abductor/i, [['glutes', 1]]],
   [/adduction|adductor|copenhagen/i, [['adductors', 1]]],
-  [/squat|lunge|split squat|step up/i, [['quads', 1], ['glutes', 0.5], ['adductors', 0.25]]],
+  // el split squat carga más glúteo que un back squat: la pierna de atrás
+  // trabaja en cadera, no en rodilla
+  [/bulgarian|split squat|lunge|step up/i, [['quads', 1], ['glutes', 0.75], ['adductors', 0.25]]],
+  [/squat/i, [['quads', 1], ['glutes', 0.5], ['adductors', 0.25]]],
   [/swing/i, [['glutes', 1], ['hamstrings', 0.5], ['erectors', 0.5]]],
   [/calf|soleus/i, [['calves', 1]]],
-  [/bench|chest|butterfly|pec deck|dip|push up|chest fly/i, [['chest', 1], ['triceps', 0.5], ['shoulders', 0.25]]],
+  // hombro posterior antes que cualquier regla de "fly" o de "row"
   [/face pull|rear delt|reverse fly|reverse pec/i, [['rear_delts', 1], ['upper_back', 0.5], ['traps', 0.25]]],
+  // aislamiento de pecho: sin tríceps (el codo no se extiende)
+  [/pec deck|butterfly|chest fly|cable fly|dumbbell fly|pec fly/i, [['chest', 1]]],
+  // fondo de tríceps ≠ fondo de pecho: el dominante cambia con la inclinación
+  [/triceps dip|tricep dip/i, [['triceps', 1], ['chest', 0.5]]],
+  [/bench|chest|dip|push up/i, [['chest', 1], ['triceps', 0.5], ['shoulders', 0.25]]],
   [/lateral raise|side raise|upright row/i, [['shoulders', 1], ['traps', 0.25]]],
   [/overhead press|arnold|shoulder press|military/i, [['shoulders', 1], ['triceps', 0.5], ['upper_back', 0.25]]],
   [/pull up|chin up|pulldown|pullover/i, [['lats', 1], ['biceps', 0.5], ['upper_back', 0.25]]],
   [/row/i, [['upper_back', 1], ['lats', 0.5], ['biceps', 0.5], ['rear_delts', 0.25]]],
   [/shrug/i, [['traps', 1]]],
   [/skullcrusher|triceps|pushdown|overhead extension/i, [['triceps', 1]]],
-  [/curl/i, [['biceps', 1], ['forearms', 0.5]]],
-  [/ab wheel|crunch|pallof|sit up|plank|leg raise|woodchop|hollow/i, [['core', 1]]],
-  [/dead hang|farmer|suitcase|wrist|grip/i, [['forearms', 1], ['traps', 0.5], ['core', 0.5]]],
+  // muñeca/antebrazo ANTES de curl: un wrist curl no es trabajo de bíceps
+  [/wrist curl|wrist extension|wrist flexion|forearm/i, [['forearms', 1]]],
+  [/reverse curl/i, [['forearms', 1], ['biceps', 0.5]]],
+  [/hammer curl|brachialis/i, [['biceps', 1], ['forearms', 0.5]]],
+  [/curl/i, [['biceps', 1], ['forearms', 0.25]]],
+  [/ab wheel|crunch|pallof|sit up|plank|leg raise|knee raise|woodchop|hollow/i, [['core', 1]]],
+  [/dead hang|farmer|suitcase|grip/i, [['forearms', 1], ['traps', 0.5], ['core', 0.5]]],
 ]
+
+/**
+ * Cardio, movilidad y calentamiento: no suman a ningún músculo, pero tampoco
+ * son un hueco del mapeo. Se declaran aparte para que el card no los reporte
+ * como "series sin contar" — ese aviso tiene que significar algo.
+ */
+const NON_LIFTING =
+  /walking|treadmill|running|jog|sprint|stationary bike|cycling|rowing machine|elliptical|stair|swim|stretch|mobility|foam roll|warm ?up|sauna|cardio/i
 
 export function musclesFor(exercise: string): [string, number][] {
   for (const [re, groups] of MUSCLE_RULES) {
     if (re.test(exercise)) return groups
   }
   return []
+}
+
+export function isNonLifting(exercise: string): boolean {
+  return NON_LIFTING.test(exercise)
 }
 
 // ── Catálogo: umbrales y recuperación por grupo ──────────────────────────
@@ -195,6 +227,25 @@ export function buildMuscles(sets: DatedSet[], now = Date.now()): MuscleInsight[
   })
 }
 
+/**
+ * Ejercicios de la ventana de 7 días que no cuentan para ningún músculo y
+ * tampoco son cardio. Sin esto, un nombre nuevo en Hevy que ninguna regla
+ * reconoce desaparece en silencio y el mapa se ve completo estando corto —
+ * el modo de fallo más peligroso de todo el card.
+ */
+export function unmappedIn(sets: DatedSet[]): UnmappedExercise[] {
+  const from = addDays(logicalToday(), -6)
+  const counts = new Map<string, number>()
+  for (const s of sets) {
+    if (s.date < from) continue
+    if (musclesFor(s.exercise).length > 0 || isNonLifting(s.exercise)) continue
+    counts.set(s.exercise, (counts.get(s.exercise) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([exercise, setCount]) => ({ exercise, sets: setCount }))
+    .sort((a, b) => b.sets - a.sets)
+}
+
 const PRIORITY_WEIGHT: Record<MusclePriority, number> = { aggressive: 3, grow: 2, maintain: 1 }
 
 /**
@@ -241,8 +292,11 @@ export function buildReadiness(muscles: MuscleInsight[]): ReadinessInsight {
     suggestion = 'Todo recuperado y con el volumen de la semana cumplido — mantén o descansa.'
   } else {
     const top = candidates.slice(0, 3)
-    const names = top.map((m) => `${m.label} (faltan ${Math.round((m.targetSets - m.sets7d) * 10) / 10})`)
-    suggestion = `Fresco y con déficit: ${names.join(' · ')}.`
+    const names = top.map((m) => {
+      const gap = Math.round((m.targetSets - m.sets7d) * 10) / 10
+      return `${m.label} (${gap} para el ${m.priority === 'maintain' ? 'MEV' : 'MAV'})`
+    })
+    suggestion = `Fresco y con volumen pendiente: ${names.join(' · ')}.`
   }
 
   return { score, ready: ready.map((m) => m.label), recovering, suggestion }

@@ -92,6 +92,12 @@ export interface MuscleInsight {
   readiness: number
 }
 
+/** Ejercicio logueado que ninguna regla reconoce — volumen que NO se contó. */
+export interface UnmappedExercise {
+  exercise: string
+  sets: number
+}
+
 export interface ReadinessInsight {
   /** 0-100, promedio ponderado (los músculos prioritarios pesan más) */
   score: number
@@ -159,6 +165,8 @@ export interface Finding {
 export interface Insights {
   meet: MeetInsight
   muscles: MuscleInsight[]
+  /** lo que Hevy trae y el mapa NO cuenta (últimos 7 días) */
+  unmapped: UnmappedExercise[]
   readiness: ReadinessInsight
   strength: StrengthInsight
   volume: VolumeInsight

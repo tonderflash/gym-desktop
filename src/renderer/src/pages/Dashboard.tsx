@@ -265,7 +265,7 @@ export function Dashboard({ onNavigate, openSkipSignal }: { onNavigate: (p: Page
         {show('muscles') && (
           <Widget editMode={editMode} onHide={() => void setWidget('muscles', false)}>
             <CardTitle>Mapa muscular — volumen vs. umbral de hipertrofia</CardTitle>
-            <MuscleCard muscles={ins.muscles} />
+            <MuscleCard muscles={ins.muscles} unmapped={ins.unmapped} fetchedAt={state.fetchedAt} />
           </Widget>
         )}
 

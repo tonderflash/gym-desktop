@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { BodyMap, zoneColor, ZONE_LABEL } from './BodyMap'
-import { Flame, TrendingUp, Minus, SlidersHorizontal } from 'lucide-react'
-import type { MuscleInsight, MusclePriority } from '@shared/types'
+import { Flame, TrendingUp, Minus, SlidersHorizontal, AlertTriangle } from 'lucide-react'
+import type { MuscleInsight, MusclePriority, UnmappedExercise } from '@shared/types'
 
 const PRIORITY_META: Record<MusclePriority, { label: string; short: string; icon: typeof Flame; tone: string }> = {
   aggressive: { label: 'Hipertrofia agresiva', short: 'Agresivo', icon: Flame, tone: 'text-energy' },
@@ -164,14 +164,41 @@ export function MusclePriorityEditor({
 }
 
 /**
+ * Sello de frescura: sin esto, "series de los últimos 7 días" puede estar
+ * leyendo un cache viejo y no hay forma de saberlo desde el card. El ciclo de
+ * fondo refresca cada 30 min y la ventana refresca al enfocarse.
+ */
+function SyncStamp({ fetchedAt }: { fetchedAt: string | null }) {
+  if (!fetchedAt) {
+    return <span className="text-warn">sin sincronizar con Hevy</span>
+  }
+  const ts = new Date(fetchedAt).getTime()
+  const mins = Number.isNaN(ts) ? null : Math.max(0, Math.round((Date.now() - ts) / 60000))
+  if (mins === null) return <span className="text-ink-faint">Hevy: {fetchedAt.slice(11, 16)}</span>
+  const label = mins < 1 ? 'recién' : mins < 60 ? `hace ${mins} min` : `hace ${Math.round(mins / 60)} h`
+  return (
+    <span className={mins > 180 ? 'text-warn' : 'text-ink-faint'}>
+      Hevy sincronizado {label}
+    </span>
+  )
+}
+
+/**
  * Card completo del mapa muscular: figura + leyenda con umbrales + editor.
  * Guardar prioridades no necesita refetch: el main rebroadcastea el estado con
  * los objetivos ya recalculados.
  */
-export function MuscleCard({ muscles }: { muscles: MuscleInsight[] }) {
+export function MuscleCard({
+  muscles, unmapped = [], fetchedAt = null,
+}: {
+  muscles: MuscleInsight[]
+  unmapped?: UnmappedExercise[]
+  fetchedAt?: string | null
+}) {
   const [editOpen, setEditOpen] = useState(false)
   const priority = muscles.filter((m) => m.priority !== 'maintain')
   const growing = priority.filter((m) => m.zone === 'growth' || m.zone === 'optimal')
+  const lostSets = unmapped.reduce((a, u) => a + u.sets, 0)
 
   return (
     <>
@@ -191,6 +218,19 @@ export function MuscleCard({ muscles }: { muscles: MuscleInsight[] }) {
             <p className="text-[11px] text-ink-dim">
               Priorizados: {priority.map((m) => m.label).join(', ')} — {growing.length} de {priority.length} en
               zona de crecimiento esta semana.
+            </p>
+          )}
+          <p className="text-[10px]">
+            <SyncStamp fetchedAt={fetchedAt} />
+          </p>
+          {lostSets > 0 && (
+            <p className="flex items-start gap-1.5 text-[11px] text-warn">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+              <span>
+                {lostSets} serie{lostSets === 1 ? '' : 's'} de {unmapped.map((u) => u.exercise).join(', ')}{' '}
+                no cuenta{unmapped.length === 1 ? '' : 'n'} para ningún músculo — el volumen de arriba está
+                corto hasta que se mapee{unmapped.length === 1 ? '' : 'n'}.
+              </span>
             </p>
           )}
         </div>
