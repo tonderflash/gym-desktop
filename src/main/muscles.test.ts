@@ -65,13 +65,20 @@ describe('musclesFor — el orden de las reglas manda', () => {
 
 // ────────────────────────────── umbrales y prioridad ────────────────────────
 
-describe('targetFor — la prioridad mueve el objetivo dentro del rango', () => {
-  it('mantener apunta al MEV, crecer al MAV, agresivo por encima del MAV', () => {
+describe('targetFor — apuntar siempre a un landmark, nunca a un número derivado', () => {
+  it('mantener apunta al MEV; crecer y agresivo al MAV', () => {
     const d = def('hamstrings')
     expect(targetFor(d, 'maintain')).toBe(d.mev)
     expect(targetFor(d, 'grow')).toBe(d.mav)
-    expect(targetFor(d, 'aggressive')).toBeGreaterThan(d.mav)
-    expect(targetFor(d, 'aggressive')).toBeLessThanOrEqual(d.mrv)
+    expect(targetFor(d, 'aggressive')).toBe(d.mav)
+  })
+
+  it('ningún objetivo cae entre landmarks (eso sería precisión inventada)', () => {
+    for (const d of MUSCLE_DEFS) {
+      for (const p of ['maintain', 'grow', 'aggressive'] as const) {
+        expect([d.mev, d.mav]).toContain(targetFor(d, p))
+      }
+    }
   })
 })
 
@@ -115,7 +122,7 @@ describe('buildMuscles — zonas', () => {
     const ham = ms.find((x) => x.key === 'hamstrings')!
     const chest = ms.find((x) => x.key === 'chest')!
     expect(ham.priority).toBe('aggressive')
-    expect(ham.targetSets).toBeGreaterThan(ham.mav)
+    expect(ham.targetSets).toBe(ham.mav)
     expect(chest.priority).toBe('maintain') // no está en el mapa → default
     expect(chest.targetSets).toBe(chest.mev)
   })

@@ -67,7 +67,11 @@ export interface MuscleInsight {
   side: 'front' | 'back' | 'both'
   /** series efectivas (ponderadas por implicación) últimos 7 días */
   sets7d: number
-  /** objetivo semanal según tu prioridad para ese músculo */
+  /**
+   * A dónde apuntar: SIEMPRE un landmark (MEV si mantienes, MAV si creces),
+   * nunca un número interpolado — un objetivo "entre MAV y MRV" sería
+   * precisión que nadie midió.
+   */
   targetSets: number
   /** volumen mínimo efectivo — debajo de esto no hay hipertrofia */
   mev: number

@@ -87,14 +87,18 @@ export const MUSCLE_DEFS: MuscleDef[] = [
 export const MUSCLE_KEYS = MUSCLE_DEFS.map((m) => m.key)
 
 /**
- * Objetivo semanal según prioridad. 'maintain' apunta al MEV (sostener sin
- * gastar recuperación), 'grow' al MAV (la zona productiva) y 'aggressive' al
- * punto medio entre MAV y MRV — alto, pero todavía recuperable.
+ * A dónde apuntar. Es SIEMPRE un landmark del músculo, nunca un número
+ * derivado: 'maintain' apunta al MEV (el piso: debajo de ahí solo sostienes) y
+ * 'grow'/'aggressive' apuntan al MAV (donde la evidencia de dosis-respuesta
+ * pone el mejor retorno por unidad de fatiga).
+ *
+ * 'aggressive' NO inventa un objetivo más alto que 'grow'. La diferencia es de
+ * atención, no de número: pesa más en el readiness global y manda en qué se
+ * sugiere entrenar primero. Un objetivo intermedio entre MAV y MRV sería
+ * precisión falsa — nadie midió ese punto.
  */
 export function targetFor(d: MuscleDef, p: MusclePriority): number {
-  if (p === 'aggressive') return Math.round((d.mav + d.mrv) / 2)
-  if (p === 'grow') return d.mav
-  return d.mev
+  return p === 'maintain' ? d.mev : d.mav
 }
 
 function zoneOf(sets: number, d: MuscleDef): MuscleZone {

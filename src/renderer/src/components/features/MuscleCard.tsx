@@ -12,10 +12,11 @@ const PRIORITY_META: Record<MusclePriority, { label: string; short: string; icon
 }
 
 /**
- * Barra de volumen con los UMBRALES marcados. La escala llega al MRV, así que
- * la posición de las marcas es la respuesta a "¿cuánto genera hipertrofia?":
- * antes del MEV solo mantienes, entre MEV y MAV creces, pasando el MRV
- * acumulas fatiga que no recuperas.
+ * Barra de volumen contra los tres landmarks del músculo. No hay marca de
+ * "objetivo personal": ese número sería una interpolación inventada encima del
+ * marco. Lo único que se dibuja es lo que el marco define — MEV (piso, debajo
+ * solo sostienes), MAV (a dónde apuntas) y MRV (techo recuperable) — y dónde
+ * caes tú. La escala llega al MRV, así que la posición ES la lectura.
  */
 function VolumeBar({ m }: { m: MuscleInsight }) {
   const scale = Math.max(m.mrv, m.sets7d, 1)
@@ -23,32 +24,36 @@ function VolumeBar({ m }: { m: MuscleInsight }) {
 
   return (
     <div className="relative mt-0.5 h-2 rounded-full bg-panel-2">
-      {/* franja de hipertrofia (MEV → MRV) como fondo tenue */}
+      {/* zona de crecimiento (MEV → MAV) y, más tenue, el margen hasta el MRV */}
       <div
-        className="absolute inset-y-0 rounded-full bg-accent/15"
-        style={{ left: `${pctOf(m.mev)}%`, width: `${pctOf(m.mrv) - pctOf(m.mev)}%` }}
+        className="absolute inset-y-0 bg-accent/10"
+        style={{ left: `${pctOf(m.mav)}%`, width: `${pctOf(m.mrv) - pctOf(m.mav)}%` }}
+      />
+      <div
+        className="absolute inset-y-0 bg-accent/22"
+        style={{ left: `${pctOf(m.mev)}%`, width: `${pctOf(m.mav) - pctOf(m.mev)}%` }}
       />
       <div
         className="bar-grow h-full rounded-full"
         style={{ width: `${pctOf(m.sets7d)}%`, background: zoneColor(m) }}
       />
-      {/* MEV: el umbral que dispara la hipertrofia */}
+      {/* MEV: debajo de aquí el volumen sostiene, no construye */}
       <span
-        className="absolute -top-0.5 h-3 w-px bg-ink/70"
+        className="absolute -top-0.5 h-3 w-px bg-ink/75"
         style={{ left: `${pctOf(m.mev)}%` }}
-        title={`MEV ${m.mev} — mínimo para crecer`}
+        title={`MEV ${m.mev} — piso: debajo mantienes, no creces`}
       />
-      {/* MAV: donde más se crece */}
+      {/* MAV: a dónde apuntar */}
       <span
-        className="absolute -top-0.5 h-3 w-px bg-ink/35"
+        className="absolute -top-1 h-4 w-[2px] rounded bg-ink/75"
         style={{ left: `${pctOf(m.mav)}%` }}
-        title={`MAV ${m.mav} — zona de mayor crecimiento`}
+        title={`MAV ${m.mav} — a dónde apuntas`}
       />
-      {/* tu objetivo según la prioridad elegida */}
+      {/* MRV: techo de lo recuperable */}
       <span
-        className="absolute -top-1 h-4 w-[2px] rounded bg-energy"
-        style={{ left: `${pctOf(m.targetSets)}%` }}
-        title={`Tu objetivo ${m.targetSets} series (${PRIORITY_META[m.priority].label})`}
+        className="absolute -top-0.5 h-3 w-px bg-danger/60"
+        style={{ left: `${pctOf(m.mrv)}%` }}
+        title={`MRV ${m.mrv} — techo recuperable`}
       />
     </div>
   )
@@ -62,14 +67,14 @@ export function MuscleLegend({ muscles }: { muscles: MuscleInsight[] }) {
         const meta = PRIORITY_META[m.priority]
         const Icon = meta.icon
         return (
-          <div key={m.key} title={`${m.label}: ${m.sets7d} series · ${ZONE_LABEL[m.zone]} · MEV ${m.mev} / MAV ${m.mav} / MRV ${m.mrv}`}>
+          <div key={m.key} title={`${m.label}: ${m.sets7d} series · ${ZONE_LABEL[m.zone]} · MEV ${m.mev} / MAV ${m.mav} / MRV ${m.mrv} · apuntas al ${m.targetSets} (${meta.label})`}>
             <div className="flex justify-between text-[11px]">
               <span className="flex items-center gap-1 text-ink-dim">
                 {m.priority !== 'maintain' && <Icon size={10} className={meta.tone} />}
                 {m.label}
               </span>
               <span className="font-mono text-ink-faint">
-                {m.sets7d}/{m.targetSets}
+                {m.sets7d} <span className="text-ink-faint/60">/ {m.mev}–{m.mav}</span>
                 {m.lastDaysAgo !== null && m.lastDaysAgo > 0 ? ` · ${m.lastDaysAgo}d` : ''}
               </span>
             </div>
@@ -111,9 +116,9 @@ export function MusclePriorityEditor({
   return (
     <Modal open={open} title="¿Qué quieres hipertrofiar?" onClose={onClose}>
       <p className="mb-3 text-xs leading-snug text-ink-faint">
-        La prioridad mueve tu objetivo semanal dentro del rango sano del músculo:
-        mantener apunta al MEV, crecer al MAV y agresivo entre MAV y MRV.
-        Hipertrofiar todo a la vez no funciona — elige pocos y aliméntalos.
+        Mantener apunta al MEV (el piso). Crecer y agresivo apuntan al MAV — agresivo no inventa un número
+        más alto, pesa más en el readiness y manda en qué se sugiere entrenar primero.
+        Hipertrofiar todo a la vez no funciona: elige pocos y aliméntalos.
       </p>
       <div className="max-h-[50vh] space-y-1 overflow-y-auto pr-1">
         {muscles.map((m) => {
@@ -177,8 +182,10 @@ export function MuscleCard({ muscles }: { muscles: MuscleInsight[] }) {
       <div className="mt-3 flex items-end justify-between gap-4">
         <div className="space-y-1">
           <p className="text-[10px] leading-relaxed text-ink-faint">
-            series efectivas de 7 días · <span className="text-ink-dim">línea blanca = MEV</span> (umbral de
-            hipertrofia) · <span className="text-energy">línea lima</span> = tu objetivo · rojo = pasaste el MRV
+            series efectivas de 7 días · <span className="text-ink-dim">MEV</span> = piso (debajo sostienes, no
+            construyes) · <span className="text-ink-dim">MAV</span> = a dónde apuntas ·{' '}
+            <span className="text-danger">MRV</span> = techo recuperable. Los tres son landmarks del marco de
+            volumen, no medidas tuyas: son una guía de dosis, no un medidor de crecimiento.
           </p>
           {priority.length > 0 && (
             <p className="text-[11px] text-ink-dim">
