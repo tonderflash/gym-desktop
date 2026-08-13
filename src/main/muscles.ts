@@ -9,6 +9,10 @@
 //     como 'aggressive' apunta alto en su rango; 'maintain' apunta al MEV.
 //  3. RECUPERACIÓN: cuánto descanso pide cada músculo según lo que le metiste
 //     la última vez — de ahí sale el readiness (¿está fresco o todavía no?).
+//
+// De dónde sale cada número y qué tan sólido es: EVIDENCIA-VOLUMEN.md en la
+// raíz. Resumen: la FORMA de la curva está medida; los valores por músculo son
+// un marco de dosificación, y los pesos/horas de este archivo son heurística.
 import { logicalToday, addDays, daysBetween } from './logic'
 import { loadSettings } from './settings'
 import type { DatedSet } from './lifting'
