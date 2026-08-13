@@ -3,7 +3,7 @@ import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import {
   Trophy, PersonStanding, BarChart3, Medal, Sparkles, Table2, CalendarCheck, Sigma,
-  ScanLine, Gauge, Bot,
+  ScanLine, Gauge, Bot, BatteryCharging, Dumbbell,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -35,8 +35,20 @@ export const WIDGET_CATALOG: WidgetTemplate[] = [
   {
     key: 'muscles',
     label: 'Mapa muscular',
-    desc: 'Cuerpo humano con calor por grupo: series efectivas de los últimos 7 días vs. tu volumen objetivo.',
+    desc: 'Cuerpo humano con calor por grupo (16 músculos) y los umbrales que disparan la hipertrofia: MEV, MAV y MRV. Marcas qué quieres crecer y el objetivo semanal se ajusta solo.',
     icon: PersonStanding,
+  },
+  {
+    key: 'readiness',
+    label: 'Readiness muscular',
+    desc: 'Qué tan recuperado está cada músculo y cuántas horas de descanso le faltan, calculado desde las series e intensidad de su última sesión.',
+    icon: BatteryCharging,
+  },
+  {
+    key: 'strength',
+    label: 'Fuerza máxima',
+    desc: 'Tu 1RM estimado por ejercicio con la serie de la que sale, su confianza, las cargas de trabajo por % y el techo si la tendencia se mantiene.',
+    icon: Dumbbell,
   },
   {
     key: 'volume',

@@ -47,14 +47,83 @@ export interface MeetInsight {
   status: PaceStatus
 }
 
+// ── Mapa muscular, hipertrofia y recuperación ──────────────────────────────
+
+/** Qué quieres de cada músculo. Define el objetivo dentro de su rango sano. */
+export type MusclePriority = 'maintain' | 'grow' | 'aggressive'
+
+/**
+ * Dónde cae tu volumen semanal respecto a los umbrales del músculo:
+ * none = sin trabajo · below = por debajo del MEV (mantienes, no creces)
+ * growth = entre MEV y MAV (hipertrofia) · optimal = zona productiva alta
+ * over = por encima del MRV (más de lo que recuperas)
+ */
+export type MuscleZone = 'none' | 'below' | 'growth' | 'optimal' | 'over'
+
 export interface MuscleInsight {
   key: string
   label: string
+  /** en qué figura se dibuja (la de espalda repite algunos grupos) */
+  side: 'front' | 'back' | 'both'
   /** series efectivas (ponderadas por implicación) últimos 7 días */
   sets7d: number
-  /** objetivo semanal del programa */
+  /** objetivo semanal según tu prioridad para ese músculo */
   targetSets: number
+  /** volumen mínimo efectivo — debajo de esto no hay hipertrofia */
+  mev: number
+  /** volumen adaptativo máximo — la zona donde más se crece */
+  mav: number
+  /** volumen máximo recuperable — arriba de esto acumulas fatiga sin ganancia */
+  mrv: number
+  priority: MusclePriority
+  zone: MuscleZone
   lastDaysAgo: number | null
+  /** series efectivas de la última sesión que lo tocó */
+  lastSessionSets: number
+  /** horas que ese músculo necesita para recuperarse de esa sesión */
+  recoveryHours: number | null
+  /** horas transcurridas desde esa sesión */
+  hoursSince: number | null
+  /** 0-1; 1 = recuperado y listo para volver a estimularlo */
+  readiness: number
+}
+
+export interface ReadinessInsight {
+  /** 0-100, promedio ponderado (los músculos prioritarios pesan más) */
+  score: number
+  /** listos para entrenar (readiness ≥ 1) */
+  ready: string[]
+  /** aún recuperándose, ascendente por horas restantes */
+  recovering: { key: string; label: string; hoursLeft: number; readiness: number }[]
+  /** qué toca hoy según readiness + déficit de volumen de tus prioridades */
+  suggestion: string
+}
+
+// ── Fuerza máxima (1RM estimados) ──────────────────────────────────────────
+
+export interface OneRmEntry {
+  exercise: string
+  /** e1RM de la mejor serie reciente (lbs) */
+  e1rmLbs: number
+  /** e1RM de la mejor serie del cache completo */
+  bestLbs: number
+  bestDate: string
+  /** alta si sale de una serie pesada y cercana al fallo */
+  confidence: 'low' | 'med' | 'high'
+  source: { weightLbs: number; reps: number; rpe: number | null; date: string; daysAgo: number }
+  /** lb/semana de la tendencia reciente; null = sin serie suficiente */
+  trendPerWeek: number | null
+  /** e1RM proyectado a 4 semanas si la tendencia se mantiene */
+  potentialLbs: number | null
+  /** cargas de trabajo derivadas del e1RM actual */
+  work: { pct: number; lbs: number }[]
+  isBig3: boolean
+}
+
+export interface StrengthInsight {
+  lifts: OneRmEntry[]
+  /** suma de los básicos con data (lbs); null si falta alguno */
+  totalBig3Lbs: number | null
 }
 
 export interface WeekVolume {
@@ -86,6 +155,8 @@ export interface Finding {
 export interface Insights {
   meet: MeetInsight
   muscles: MuscleInsight[]
+  readiness: ReadinessInsight
+  strength: StrengthInsight
   volume: VolumeInsight
   prs: PrInsight[]
   findings: Finding[]
@@ -195,6 +266,7 @@ export interface SettingsView {
   legacyAvailable: boolean
   meet: MeetSettings
   dashboardWidgets: Record<string, boolean>
+  musclePriorities: Record<string, MusclePriority>
 }
 
 export interface SettingsPatch {
@@ -207,6 +279,7 @@ export interface SettingsPatch {
   hevyKey?: string
   meet?: MeetSettings
   dashboardWidgets?: Record<string, boolean>
+  musclePriorities?: Record<string, MusclePriority>
 }
 
 export type UpdaterEvent =

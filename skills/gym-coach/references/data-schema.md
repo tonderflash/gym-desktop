@@ -62,6 +62,13 @@ día anterior). Códigos en inglés; UI en español.
   bench, deadlift } }` con e1RM objetivo en LBS (0 = ese lift no tiene meta).
   Úsalo como referencia de ritmo/progresión; si está vacío, el usuario aún no
   configuró objetivo — no inventes uno.
+- `settings.json` → `musclePriorities` — QUÉ músculos quiere hipertrofiar:
+  `{ "<grupo>": "maintain" | "grow" | "aggressive" }` (los grupos que no
+  aparecen son `maintain`). No es presentación: define el objetivo semanal de
+  series dentro del rango del músculo — `maintain` apunta al MEV, `grow` al MAV
+  y `aggressive` entre MAV y MRV. Úsalo para juzgar si el volumen de la semana
+  sirve a lo que el usuario dijo que quiere crecer; si un grupo `aggressive`
+  viene semanas por debajo de su MEV, eso es un hallazgo, no un detalle.
 - `settings.json` → `dashboardWidgets` — solo presentación, ignóralo.
 
 ## Trampas conocidas

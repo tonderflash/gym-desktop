@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { paths } from './env'
 import { DEFAULT_FACTORS, DEFAULT_REST_DAYS, DEFAULT_REMINDER } from '@shared/schema'
-import type { FactorDef } from '@shared/types'
+import type { FactorDef, MusclePriority } from '@shared/types'
 
 export interface MeetLifts {
   squat: number
@@ -28,10 +28,25 @@ export interface MeetConfig {
  *  default abajo, y la entrada + render en el renderer (WIDGET_CATALOG). */
 export const WIDGET_KEYS = [
   'agent',
-  'meet', 'muscles', 'volume', 'prs', 'findings', 'riskBreakdown',
+  'meet', 'muscles', 'readiness', 'strength', 'volume', 'prs', 'findings', 'riskBreakdown',
   'consistency', 'total', 'vbtHomolog', 'vbtProfile',
 ] as const
 export type WidgetKey = (typeof WIDGET_KEYS)[number]
+
+/**
+ * Qué quieres de cada músculo. Decide el objetivo semanal dentro del rango
+ * sano del grupo (mantener = MEV, crecer = MAV, agresivo = entre MAV y MRV).
+ * El default NO es "todo agresivo": hipertrofiar todo a la vez es la forma
+ * más rápida de no recuperar nada. Arranca con la cadena posterior
+ * priorizada — el resto sostiene mientras tanto — y se edita desde el card.
+ */
+export const DEFAULT_MUSCLE_PRIORITIES: Record<string, MusclePriority> = {
+  hamstrings: 'aggressive',
+  glutes: 'aggressive',
+  calves: 'grow',
+  erectors: 'grow',
+  lats: 'grow',
+}
 
 export interface Settings {
   userId: string
@@ -47,6 +62,7 @@ export interface Settings {
   migratedFromGymBar: boolean
   meet: MeetConfig
   dashboardWidgets: Record<WidgetKey, boolean>
+  musclePriorities: Record<string, MusclePriority>
 }
 
 let cached: Settings | null = null
@@ -76,10 +92,14 @@ function defaults(): Settings {
       // el Agente arriba de todo: es el card que resume lo más importante
       agent: true,
       meet: true, muscles: true, volume: true, prs: true, findings: true, riskBreakdown: true,
+      // readiness y fuerza máxima acompañan al mapa muscular: qué está listo
+      // y cuánto levantas hoy son las dos preguntas que siguen al mapa
+      readiness: true, strength: true,
       consistency: false, total: false,
       // VBT en vivo desde el motor GymVision — visibles por defecto
       vbtHomolog: true, vbtProfile: true,
     },
+    musclePriorities: { ...DEFAULT_MUSCLE_PRIORITIES },
   }
 }
 
@@ -100,6 +120,7 @@ export function loadSettings(): Settings {
           targets: { ...d.meet.targets, ...(raw.meet?.targets ?? {}) },
         },
         dashboardWidgets: { ...d.dashboardWidgets, ...(raw.dashboardWidgets ?? {}) },
+        musclePriorities: { ...d.musclePriorities, ...(raw.musclePriorities ?? {}) },
       }
       return cached!
     } catch {

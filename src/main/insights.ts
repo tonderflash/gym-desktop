@@ -4,72 +4,17 @@
 import type { HevyWorkout } from './store'
 import type { LogRow } from './store'
 import { loadSettings, type MeetLifts } from './settings'
-import { logicalToday, logicalDateFromDt, addDays, daysBetween, weekdayOf } from './logic'
+import { logicalToday, addDays, daysBetween, weekdayOf } from './logic'
+import {
+  KG_TO_LBS, e1rmLbs, bestE1rm, workingSets, trendSlope, type DatedSet,
+} from './lifting'
+import { buildMuscles, buildReadiness } from './muscles'
+import { buildStrength } from './strength'
 import { DOW_NAMES } from '@shared/schema'
 import type {
   Insights, MeetInsight, LiftProgress, PaceStatus, MuscleInsight,
   VolumeInsight, WeekVolume, PrInsight, Finding,
 } from '@shared/types'
-
-const KG_TO_LBS = 2.2046226218
-
-// ── e1RM ─────────────────────────────────────────────────────────────────
-/**
- * e1RM estilo Epley pero con reps EFECTIVAS = reps + RIR (si el set trae RPE),
- * como manda el programa ("por RIR, no Epley inflado"). Sets de >8 reps no
- * estiman fuerza → se descartan.
- */
-function e1rmLbs(weightKg: number, reps: number, rpe: number | null | undefined): number | null {
-  if (!(weightKg > 0) || !(reps > 0) || reps > 8) return null
-  const rir = typeof rpe === 'number' && rpe >= 5 && rpe <= 10 ? 10 - rpe : 0
-  const eff = Math.min(reps + rir, 12)
-  const kg = eff <= 1 ? weightKg : weightKg * (1 + eff / 30)
-  return kg * KG_TO_LBS
-}
-
-interface DatedSet {
-  date: string
-  exercise: string
-  weightKg: number
-  reps: number
-  rpe: number | null
-  type: string
-}
-
-/** Aplana el cache a sets de trabajo fechados (excluye warmups y sets vacíos). */
-function workingSets(workouts: HevyWorkout[]): DatedSet[] {
-  const out: DatedSet[] = []
-  for (const w of workouts) {
-    if (!w.start_time) continue
-    const dt = new Date(w.start_time)
-    if (Number.isNaN(dt.getTime())) continue
-    const date = logicalDateFromDt(dt)
-    for (const ex of w.exercises ?? []) {
-      const title = (ex.title ?? '').trim()
-      if (!title) continue
-      for (const s of ex.sets ?? []) {
-        const type = s.type ?? 'normal'
-        if (type === 'warmup') continue
-        const weightKg = s.weight_kg ?? 0
-        const reps = s.reps ?? 0
-        if (!(weightKg > 0) || !(reps > 0)) continue
-        out.push({ date, exercise: title, weightKg, reps, rpe: s.rpe ?? null, type })
-      }
-    }
-  }
-  return out
-}
-
-function bestE1rm(sets: DatedSet[], titles: Set<string>, from: string, to: string): number | null {
-  let best: number | null = null
-  for (const s of sets) {
-    if (s.date < from || s.date > to) continue
-    if (!titles.has(s.exercise.toLowerCase())) continue
-    const v = e1rmLbs(s.weightKg, s.reps, s.rpe)
-    if (v !== null && (best === null || v > best)) best = v
-  }
-  return best
-}
 
 // ── Meet ─────────────────────────────────────────────────────────────────
 const LIFT_TITLES: Record<keyof MeetLifts, string[]> = {
@@ -114,36 +59,6 @@ function liftHistory(sets: DatedSet[], titles: Set<string>): { date: string; e1r
       return { date, e1rmLbs: Math.round(best) }
     })
     .slice(-30)
-}
-
-// Ganancia plausible acotada: ±0.75 lb/día (~5 lb/semana, rápido pero posible
-// en un regreso). Sin el cap, un single suelto proyecta números de fantasía.
-const MAX_SLOPE_LBS_PER_DAY = 0.75
-
-/**
- * Pendiente de la tendencia reciente (regresión sobre las últimas ≤6 sesiones)
- * en lb/día. Exige ≥3 sesiones repartidas en ≥21 días — con menos, cualquier
- * recta es adivinanza. Señal direccional, no promesa.
- */
-function trendSlope(history: { date: string; e1rmLbs: number }[]): number | null {
-  const pts = history.slice(-6)
-  if (pts.length < 3) return null
-  if (daysBetween(pts[pts.length - 1].date, pts[0].date) < 21) return null
-
-  const x0 = pts[0].date
-  const xs = pts.map((p) => daysBetween(p.date, x0))
-  const ys = pts.map((p) => p.e1rmLbs)
-  const n = xs.length
-  const mx = xs.reduce((a, b) => a + b, 0) / n
-  const my = ys.reduce((a, b) => a + b, 0) / n
-  let num = 0
-  let den = 0
-  for (let i = 0; i < n; i++) {
-    num += (xs[i] - mx) * (ys[i] - my)
-    den += (xs[i] - mx) ** 2
-  }
-  if (den === 0) return null
-  return Math.max(-MAX_SLOPE_LBS_PER_DAY, Math.min(num / den, MAX_SLOPE_LBS_PER_DAY))
 }
 
 function buildMeet(sets: DatedSet[]): MeetInsight {
@@ -210,76 +125,6 @@ function buildMeet(sets: DatedSet[]): MeetInsight {
     totalProjectedLbs: totalProjected,
     status: totalProjected !== null ? paceStatus(totalProjected - totalTarget, 15) : 'nodata',
   }
-}
-
-// ── Mapa muscular ────────────────────────────────────────────────────────
-// Primer match gana — el orden importa (leg curl antes que curl, romanian
-// antes que deadlift, lateral raise antes que row, etc.)
-const MUSCLE_RULES: [RegExp, [string, number][]][] = [
-  [/leg curl/i, [['hamstrings', 1]]],
-  [/romanian deadlift/i, [['hamstrings', 1], ['glutes', 0.5]]],
-  [/deadlift/i, [['glutes', 1], ['hamstrings', 1], ['back', 0.5], ['forearms', 0.5]]],
-  [/leg press/i, [['quads', 1], ['glutes', 0.5]]],
-  [/squat|lunge/i, [['quads', 1], ['glutes', 0.5]]],
-  [/hip thrust/i, [['glutes', 1]]],
-  [/swing/i, [['glutes', 1], ['hamstrings', 0.5]]],
-  [/calf/i, [['calves', 1]]],
-  [/bench|chest|butterfly|pec deck|dip/i, [['chest', 1], ['triceps', 0.5], ['shoulders', 0.25]]],
-  [/face pull|rear delt|reverse fly/i, [['shoulders', 1], ['traps', 0.25]]],
-  [/lateral raise/i, [['shoulders', 1]]],
-  [/overhead press|arnold|shoulder press/i, [['shoulders', 1], ['triceps', 0.5]]],
-  [/pull up|pulldown|row/i, [['back', 1], ['biceps', 0.5]]],
-  [/shrug/i, [['traps', 1]]],
-  [/skullcrusher|triceps|pushdown/i, [['triceps', 1]]],
-  [/curl/i, [['biceps', 1]]],
-  [/ab wheel|crunch|pallof|sit up|plank/i, [['core', 1]]],
-  [/dead hang|farmer|suitcase/i, [['forearms', 1], ['traps', 0.5], ['core', 0.5]]],
-]
-
-// Objetivos semanales del programa balanceado (series por grupo).
-const MUSCLE_GROUPS: { key: string; label: string; target: number }[] = [
-  { key: 'quads', label: 'Cuádriceps', target: 10 },
-  { key: 'hamstrings', label: 'Isquios', target: 9 },
-  { key: 'glutes', label: 'Glúteos', target: 6 },
-  { key: 'chest', label: 'Pecho', target: 13 },
-  { key: 'back', label: 'Espalda', target: 10 },
-  { key: 'shoulders', label: 'Hombros', target: 13 },
-  { key: 'biceps', label: 'Bíceps', target: 7 },
-  { key: 'triceps', label: 'Tríceps', target: 3 },
-  { key: 'calves', label: 'Gemelos', target: 6 },
-  { key: 'core', label: 'Core', target: 6 },
-  { key: 'traps', label: 'Trapecios', target: 3 },
-  { key: 'forearms', label: 'Agarre', target: 3 },
-]
-
-function musclesFor(exercise: string): [string, number][] {
-  for (const [re, groups] of MUSCLE_RULES) {
-    if (re.test(exercise)) return groups
-  }
-  return []
-}
-
-function buildMuscles(sets: DatedSet[]): MuscleInsight[] {
-  const today = logicalToday()
-  const weekAgo = addDays(today, -6)
-  const vol = new Map<string, number>()
-  const last = new Map<string, string>()
-
-  for (const s of sets) {
-    for (const [g, w] of musclesFor(s.exercise)) {
-      if (s.date >= weekAgo) vol.set(g, (vol.get(g) ?? 0) + w)
-      const prev = last.get(g)
-      if (!prev || s.date > prev) last.set(g, s.date)
-    }
-  }
-
-  return MUSCLE_GROUPS.map((g) => ({
-    key: g.key,
-    label: g.label,
-    sets7d: Math.round((vol.get(g.key) ?? 0) * 10) / 10,
-    targetSets: g.target,
-    lastDaysAgo: last.has(g.key) ? daysBetween(today, last.get(g.key)!) : null,
-  }))
 }
 
 // ── Volumen semanal ──────────────────────────────────────────────────────
@@ -367,9 +212,38 @@ function pct(x: number): string {
   return `${Math.round(x * 100)}%`
 }
 
-function buildFindings(log: Map<string, LogRow>, volume: VolumeInsight): Finding[] {
+function buildFindings(
+  log: Map<string, LogRow>,
+  volume: VolumeInsight,
+  muscles: MuscleInsight[],
+): Finding[] {
   const resolved = [...log.values()].filter((r) => ['0', '1'].includes(String(r.went).trim()))
   const findings: Finding[] = []
+
+  // Hipertrofia: lo que marcaste para crecer y no llega al umbral que la
+  // dispara — el hallazgo más accionable que hay, va primero.
+  const priority = muscles.filter((m) => m.priority !== 'maintain')
+  const underMev = priority.filter((m) => m.sets7d < m.mev)
+  const over = muscles.filter((m) => m.zone === 'over')
+  if (underMev.length > 0) {
+    findings.push({
+      text: `${underMev.map((m) => m.label).join(', ')} está por debajo de su umbral de hipertrofia (MEV) esta semana — a ese volumen mantienes, no creces.`,
+      tone: 'warn',
+    })
+  } else if (over.length > 0) {
+    findings.push({
+      text: `${over.map((m) => m.label).join(', ')} pasó su volumen máximo recuperable — más series ahí solo suman fatiga.`,
+      tone: 'warn',
+    })
+  } else if (priority.length > 0) {
+    const inZone = priority.filter((m) => m.zone === 'growth' || m.zone === 'optimal')
+    if (inZone.length > 0) {
+      findings.push({
+        text: `${inZone.map((m) => m.label).join(', ')} en zona de hipertrofia esta semana — el estímulo está donde lo pediste.`,
+        tone: 'ok',
+      })
+    }
+  }
 
   // Sueño vs asistencia
   const withSleep = resolved.filter((r) => Number.isFinite(parseFloat(r.sleep_hours ?? '')))
@@ -438,11 +312,14 @@ function buildFindings(log: Map<string, LogRow>, volume: VolumeInsight): Finding
 export function buildInsights(workouts: HevyWorkout[], log: Map<string, LogRow>): Insights {
   const sets = workingSets(workouts)
   const volume = buildVolume(sets)
+  const muscles = buildMuscles(sets)
   return {
     meet: buildMeet(sets),
-    muscles: buildMuscles(sets),
+    muscles,
+    readiness: buildReadiness(muscles),
+    strength: buildStrength(sets),
     volume,
     prs: buildPrs(sets),
-    findings: buildFindings(log, volume),
+    findings: buildFindings(log, volume, muscles),
   }
 }

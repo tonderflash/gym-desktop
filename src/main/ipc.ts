@@ -14,7 +14,10 @@ import { checkForUpdates, installUpdate } from './updater'
 import { RISK_MODEL_NAME } from '@shared/schema'
 import { SKIP_REASON_OPTS } from '@shared/labels'
 import { sanitizeCsvText } from './csv'
-import type { AppState, CheckinPayload, CheckinResult, FactorDef, SettingsPatch, SettingsView } from '@shared/types'
+import { MUSCLE_KEYS } from './muscles'
+import type {
+  AppState, CheckinPayload, CheckinResult, FactorDef, MusclePriority, SettingsPatch, SettingsView,
+} from '@shared/types'
 
 const VALID_SKIP_REASONS = new Set(SKIP_REASON_OPTS.map(([code]) => code))
 
@@ -69,6 +72,15 @@ function normalizeSettingsPatch(p: SettingsPatch): SettingsPatch {
         deadlift: cleanLift(p.meet.targets?.deadlift),
       },
     }
+  }
+  if (p.musclePriorities && typeof p.musclePriorities === 'object') {
+    // solo músculos del catálogo, solo las tres prioridades válidas
+    const clean: Record<string, MusclePriority> = {}
+    for (const k of MUSCLE_KEYS) {
+      const v = (p.musclePriorities as Record<string, unknown>)[k]
+      if (v === 'maintain' || v === 'grow' || v === 'aggressive') clean[k] = v
+    }
+    if (Object.keys(clean).length) out.musclePriorities = clean
   }
   if (p.dashboardWidgets && typeof p.dashboardWidgets === 'object') {
     // solo claves del catálogo, solo booleanos — nada arbitrario al disco
@@ -141,6 +153,7 @@ function settingsView(): SettingsView {
     legacyAvailable: legacyAvailable(),
     meet: s.meet,
     dashboardWidgets: s.dashboardWidgets,
+    musclePriorities: s.musclePriorities,
   }
 }
 
@@ -260,6 +273,9 @@ export function registerIpc(window: BrowserWindow): void {
     if (rest.dashboardWidgets) {
       // el patch puede traer un solo toggle — merge con lo existente
       clean.dashboardWidgets = { ...loadSettings().dashboardWidgets, ...rest.dashboardWidgets }
+    }
+    if (rest.musclePriorities) {
+      clean.musclePriorities = { ...loadSettings().musclePriorities, ...rest.musclePriorities }
     }
     if (Object.keys(clean).length) patchSettings(clean)
     broadcastState()

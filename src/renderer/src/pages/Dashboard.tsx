@@ -6,7 +6,9 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { AnimatedNumber } from '../components/ui/AnimatedNumber'
 import { RiskGauge } from '../components/features/RiskGauge'
 import { SkipReasonModal } from '../components/features/SkipReasonModal'
-import { BodyMap, heatColor } from '../components/features/BodyMap'
+import { MuscleCard } from '../components/features/MuscleCard'
+import { ReadinessCard } from '../components/features/ReadinessCard'
+import { StrengthCard } from '../components/features/StrengthCard'
 import { MeetCard } from '../components/features/MeetCard'
 import { MeetEditor } from '../components/features/MeetEditor'
 import { WidgetShop, WIDGET_CATALOG } from '../components/features/WidgetShop'
@@ -20,45 +22,13 @@ import {
   LayoutGrid, EyeOff, Eye, Store,
 } from 'lucide-react'
 import type { Page } from '../App'
-import type { MuscleInsight, VolumeInsight, SettingsView } from '@shared/types'
+import type { VolumeInsight, SettingsView } from '@shared/types'
 
 // Cards opcionales del panel ("widgets"): cada quien arma su dashboard desde
 // la galería. Los core (riesgo, plan, check-in, outcomes) no se ocultan.
 const WIDGET_LABELS: Record<string, string> = Object.fromEntries(
   WIDGET_CATALOG.map((w) => [w.key, w.label]),
 )
-
-/** Leyenda del mapa muscular: barra sets7d/target por grupo. */
-function MuscleLegend({ muscles }: { muscles: MuscleInsight[] }) {
-  return (
-    <div className="grid grid-cols-2 gap-x-5 gap-y-1.5">
-      {muscles.map((m, i) => {
-        const ratio = m.targetSets > 0 ? m.sets7d / m.targetSets : 0
-        return (
-          <div key={m.key}>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-ink-dim">{m.label}</span>
-              <span className="font-mono text-ink-faint">
-                {m.sets7d}/{m.targetSets}
-                {m.lastDaysAgo !== null && m.lastDaysAgo > 0 ? ` · ${m.lastDaysAgo}d` : ''}
-              </span>
-            </div>
-            <div className="mt-0.5 h-1.5 rounded-full bg-panel-2">
-              <div
-                className="bar-grow h-full rounded-full"
-                style={{
-                  width: `${Math.min(1, ratio) * 100}%`,
-                  background: heatColor(ratio),
-                  animationDelay: `${i * 40}ms`,
-                }}
-              />
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
 
 /** Mini gráfico de barras del tonelaje semanal (la actual en lima). */
 function VolumeChart({ volume }: { volume: VolumeInsight }) {
@@ -294,14 +264,22 @@ export function Dashboard({ onNavigate, openSkipSignal }: { onNavigate: (p: Page
 
         {show('muscles') && (
           <Widget editMode={editMode} onHide={() => void setWidget('muscles', false)}>
-            <CardTitle>Mapa muscular — últimos 7 días</CardTitle>
-            <div className="grid grid-cols-[auto_1fr] items-center gap-8">
-              <BodyMap muscles={ins.muscles} />
-              <MuscleLegend muscles={ins.muscles} />
-            </div>
-            <p className="mt-3 text-[10px] text-ink-faint">
-              series efectivas vs. objetivo semanal del programa · lima = volumen cumplido · gris = sin trabajo
-            </p>
+            <CardTitle>Mapa muscular — volumen vs. umbral de hipertrofia</CardTitle>
+            <MuscleCard muscles={ins.muscles} />
+          </Widget>
+        )}
+
+        {show('readiness') && (
+          <Widget editMode={editMode} onHide={() => void setWidget('readiness', false)}>
+            <CardTitle>Readiness muscular — quién está descansado</CardTitle>
+            <ReadinessCard muscles={ins.muscles} readiness={ins.readiness} />
+          </Widget>
+        )}
+
+        {show('strength') && (
+          <Widget editMode={editMode} onHide={() => void setWidget('strength', false)}>
+            <CardTitle>Fuerza máxima — 1RM estimado</CardTitle>
+            <StrengthCard strength={ins.strength} />
           </Widget>
         )}
 
