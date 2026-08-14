@@ -13,6 +13,7 @@ function set(over: Partial<DatedSet> & { exercise: string }): DatedSet {
     ts: Date.now(),
     weightKg: 100,
     reps: 3,
+    durationSec: 0,
     rpe: 9,
     type: 'normal',
     ...over,

@@ -8,7 +8,7 @@ import { logicalToday, addDays, daysBetween, weekdayOf } from './logic'
 import {
   KG_TO_LBS, e1rmLbs, bestE1rm, workingSets, trendSlope, type DatedSet,
 } from './lifting'
-import { buildMuscles, buildReadiness, unmappedIn } from './muscles'
+import { buildMuscles, buildReadiness, unmappedIn, isNonLifting } from './muscles'
 import { buildStrength } from './strength'
 import { DOW_NAMES } from '@shared/schema'
 import type {
@@ -139,6 +139,9 @@ function buildVolume(sets: DatedSet[]): VolumeInsight {
   const tonnage = new Map<string, number>()
   const sessions = new Map<string, Set<string>>()
   for (const s of sets) {
+    // Desde que el peso corporal cuenta, el cardio también llega hasta aquí:
+    // sin este filtro un día de solo caminar sumaría una sesión de fuerza.
+    if (isNonLifting(s.exercise)) continue
     const wk = mondayOf(s.date)
     tonnage.set(wk, (tonnage.get(wk) ?? 0) + s.weightKg * s.reps * KG_TO_LBS)
     if (!sessions.has(wk)) sessions.set(wk, new Set())

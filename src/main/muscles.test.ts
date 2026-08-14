@@ -25,6 +25,7 @@ function set(over: Partial<DatedSet> & { exercise: string }): DatedSet {
     ts: Date.now(),
     weightKg: 60,
     reps: 10,
+    durationSec: 0,
     rpe: null,
     type: 'normal',
     ...over,
@@ -267,6 +268,31 @@ describe('buildMuscles — readiness', () => {
     const now = Date.now()
     const sets = [set({ exercise: 'Seated Leg Curl', ts: now - 5000 * HOUR })]
     expect(buildMuscles(sets, now).find((m) => m.key === 'hamstrings')!.readiness).toBe(1)
+  })
+})
+
+describe('buildMuscles — el trabajo corporal cuenta como volumen', () => {
+  it('el core acumula series desde ejercicios sin carga', () => {
+    const sets = [
+      set({ exercise: 'Ab Wheel', weightKg: 0, reps: 10 }),
+      set({ exercise: 'Ab Wheel', weightKg: 0, reps: 10 }),
+      set({ exercise: 'Knee Raise Parallel Bars', weightKg: 0, reps: 15 }),
+    ]
+    const core = buildMuscles(sets).find((m) => m.key === 'core')!
+    expect(core.sets7d).toBe(3)
+    expect(core.zone).not.toBe('none')
+  })
+
+  it('un isométrico no se cuela como serie pesada', () => {
+    // reps 0 caía en la rama `reps <= 3` e inflaba la recuperación un 15%
+    const now = Date.now()
+    const plank = Array.from({ length: 3 }, () =>
+      set({ exercise: 'Plank', weightKg: 0, reps: 0, durationSec: 45, ts: now }))
+    const heavy = Array.from({ length: 3 }, () =>
+      set({ exercise: 'Ab Wheel', weightKg: 0, reps: 3, ts: now }))
+    const hoursOf = (s: DatedSet[]): number =>
+      buildMuscles(s, now).find((m) => m.key === 'core')!.recoveryHours!
+    expect(hoursOf(plank)).toBeLessThan(hoursOf(heavy))
   })
 })
 

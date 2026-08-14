@@ -186,7 +186,9 @@ export function buildMuscles(sets: DatedSet[], now = Date.now()): MuscleInsight[
   const last = new Map<string, LastBout>()
 
   for (const s of sets) {
-    const hardSet = (typeof s.rpe === 'number' && s.rpe >= 9) || s.reps <= 3
+    // `reps > 0 &&` importa: un isométrico llega con reps 0 y sin ese guardia
+    // toda plancha contaría como serie pesada e inflaría la recuperación.
+    const hardSet = (typeof s.rpe === 'number' && s.rpe >= 9) || (s.reps > 0 && s.reps <= 3)
     for (const [g, w] of musclesFor(s.exercise)) {
       if (s.date >= weekAgo) vol.set(g, (vol.get(g) ?? 0) + w)
       const prev = last.get(g)

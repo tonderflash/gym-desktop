@@ -104,6 +104,8 @@ export interface HevySet {
   type?: string // 'warmup' | 'normal' | 'failure' | …
   weight_kg?: number | null
   reps?: number | null
+  /** Isométricos (plancha, dead hang) llegan sin reps y solo con tiempo. */
+  duration_seconds?: number | null
   rpe?: number | null
 }
 

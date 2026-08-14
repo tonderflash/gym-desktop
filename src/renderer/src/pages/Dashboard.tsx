@@ -197,7 +197,7 @@ export function Dashboard({ onNavigate, openSkipSignal }: { onNavigate: (p: Page
         <div className="grid grid-cols-2 gap-4">
           <Card>
             <CardTitle>Riesgo de hoy</CardTitle>
-            <RiskGauge pct={state.riskPct} level={state.riskLevel} />
+            <RiskGauge pct={state.riskPct} level={state.riskLevel} done={state.todayWent} />
           </Card>
 
           <Card>

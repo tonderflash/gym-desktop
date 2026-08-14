@@ -24,8 +24,12 @@ export interface DatedSet {
   /** epoch ms del FIN de la sesión — la fatiga se cuenta desde que saliste */
   ts: number
   exercise: string
+  /** 0 en peso corporal: Hevy no guarda tu masa, solo la carga externa. */
   weightKg: number
+  /** 0 en isométricos (plancha, dead hang) — ahí el esfuerzo es `durationSec`. */
   reps: number
+  /** Segundos bajo tensión; 0 si el set se mide en reps. */
+  durationSec: number
   rpe: number | null
   type: string
 }
@@ -48,8 +52,14 @@ export function workingSets(workouts: HevyWorkout[]): DatedSet[] {
         if (type === 'warmup') continue
         const weightKg = s.weight_kg ?? 0
         const reps = s.reps ?? 0
-        if (!(weightKg > 0) || !(reps > 0)) continue
-        out.push({ date, ts, exercise: title, weightKg, reps, rpe: s.rpe ?? null, type })
+        const durationSec = s.duration_seconds ?? 0
+        // Un set cuenta si hubo esfuerzo: reps (con carga externa o sin ella) o
+        // tiempo bajo tensión. Exigir weight_kg > 0 borraba del mapa muscular
+        // todo el trabajo corporal — dominadas, fondos, flexiones, remo
+        // invertido y el core entero — porque Hevy guarda ese peso como null.
+        // El e1RM no se contamina: e1rmLbs ya devuelve null sin carga.
+        if (!(reps > 0) && !(durationSec > 0)) continue
+        out.push({ date, ts, exercise: title, weightKg, reps, durationSec, rpe: s.rpe ?? null, type })
       }
     }
   }
