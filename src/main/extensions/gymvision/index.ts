@@ -2,7 +2,7 @@
 // (el proyecto gymvision, `python manage.py runserver`). Solo expone canales
 // `ext:gymvision:*`. Para desactivar la integración: BORRA esta carpeta y la
 // gemela en src/renderer/src/features/gymvision/.
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, BrowserWindow, net } from 'electron'
 import { setBusy } from '../../busy'
 import { getHevyKey } from '../../settings'
 
@@ -23,7 +23,7 @@ interface CallOpts extends RequestInit {
 async function call<T = unknown>(path: string, opts: CallOpts = {}): Promise<ApiResult<T>> {
   const { timeoutMs = 6000, ...init } = opts
   try {
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await net.fetch(`${BASE}${path}`, {
       ...init,
       headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
       signal: AbortSignal.timeout(timeoutMs),

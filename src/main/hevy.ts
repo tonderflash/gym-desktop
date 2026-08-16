@@ -1,4 +1,5 @@
 // Cliente Hevy: pageSize máx 10; 404 = fin de paginación (no es error).
+import { net } from 'electron'
 import { getHevyKey } from './settings'
 import { writeCache, readCache, type HevyWorkout } from './store'
 import { logicalDateFromDt, localIso } from './logic'
@@ -8,8 +9,13 @@ const BASE = 'https://api.hevyapp.com/v1'
 const PAGE_SIZE = 10
 const PAGES = 5
 
+// net.fetch (Chromium) en vez del fetch global de Node/undici: este último
+// ignora el proxy del sistema y el almacén de certificados de Windows, así
+// que falla en máquinas Windows corporativas con antivirus que interceptan
+// TLS (Kaspersky, ESET, Zscaler...) o detrás de un proxy — reportado por
+// usuarios de Windows como "no hace fetch de mis entrenamientos".
 async function fetchPage(key: string, page: number): Promise<HevyWorkout[] | null> {
-  const res = await fetch(`${BASE}/workouts?page=${page}&pageSize=${PAGE_SIZE}`, {
+  const res = await net.fetch(`${BASE}/workouts?page=${page}&pageSize=${PAGE_SIZE}`, {
     headers: { 'api-key': key, accept: 'application/json' },
   })
   if (res.status === 404) return null // fin de paginación
@@ -42,7 +48,7 @@ export async function fetchWorkouts(): Promise<HevyWorkout[]> {
 
 export async function testKey(key: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch(`${BASE}/workouts?page=1&pageSize=1`, {
+    const res = await net.fetch(`${BASE}/workouts?page=1&pageSize=1`, {
       headers: { 'api-key': key, accept: 'application/json' },
     })
     if (res.ok || res.status === 404) return { ok: true }

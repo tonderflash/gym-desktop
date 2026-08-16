@@ -11,7 +11,7 @@
 // versión validada por semver + solo upgrade, hash SHA-512 del manifiesto
 // verificado antes de extraer, tamaño acotado, extracción con /usr/bin/ditto
 // (execFile, sin shell) y swap por rename dentro del mismo volumen.
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, net } from 'electron'
 import { execFile } from 'child_process'
 import { createHash } from 'crypto'
 import { createWriteStream, existsSync, mkdirSync, readdirSync, rmSync, renameSync } from 'fs'
@@ -102,7 +102,7 @@ async function fetchWithTimeout(url: string): Promise<Response> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS)
   try {
-    return await fetch(url, { signal: ctrl.signal, redirect: 'follow' })
+    return await net.fetch(url, { signal: ctrl.signal, redirect: 'follow' })
   } finally {
     clearTimeout(timer)
   }
